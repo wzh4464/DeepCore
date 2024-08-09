@@ -12,21 +12,16 @@ from time import sleep
 
 def main():
     """
-    Main function for running the deep learning experiment.
+    Main function for running the deep learning experiment, now supporting OTI method.
 
     This function sets up the experiment, including parsing arguments, loading datasets,
-    initializing models, and running the training and evaluation loops.
+    initializing models, and running the training and evaluation loops. It now includes
+    support for the OTI (Online Training Influence) method.
 
-    The function handles:
-    - Argument parsing
-    - Dataset loading and preprocessing
-    - Model initialization and loading
-    - Training and evaluation loops
-    - Checkpoint saving and loading
-    - Cross-architecture experiments
-
-    The function supports various datasets, models, and selection methods, and allows
-    for customization of training parameters, optimization strategies, and evaluation metrics.
+    Key features:
+    - Supports both original functionality and new OTI method
+    - When using OTI, sets batch size to 1 and saves model parameters after updating each point
+    - Calculates scores for each point based on historical parameters and best parameters for OTI
 
     Returns:
         None
