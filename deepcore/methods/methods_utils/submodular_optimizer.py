@@ -4,7 +4,9 @@ import numpy as np
 optimizer_choices = ["NaiveGreedy", "LazyGreedy", "StochasticGreedy", "ApproximateLazyGreedy"]
 
 class optimizer(object):
-    def __init__(self, args, index, budget:int, already_selected=[]):
+    def __init__(self, args, index, budget:int, already_selected=None):
+        if already_selected is None:
+            already_selected = []
         self.args = args
         self.index = index
 
@@ -17,7 +19,9 @@ class optimizer(object):
 
 
 class NaiveGreedy(optimizer):
-    def __init__(self, args, index, budget:int, already_selected=[]):
+    def __init__(self, args, index, budget:int, already_selected=None):
+        if already_selected is None:
+            already_selected = []
         super(NaiveGreedy, self).__init__(args, index, budget, already_selected)
 
     def select(self, gain_function, update_state=None, **kwargs):
@@ -41,7 +45,9 @@ class NaiveGreedy(optimizer):
 
 
 class LazyGreedy(optimizer):
-    def __init__(self, args, index, budget:int, already_selected=[]):
+    def __init__(self, args, index, budget:int, already_selected=None):
+        if already_selected is None:
+            already_selected = []
         super(LazyGreedy, self).__init__(args, index, budget, already_selected)
 
     def select(self, gain_function, update_state=None, **kwargs):
@@ -79,7 +85,9 @@ class LazyGreedy(optimizer):
 
 
 class StochasticGreedy(optimizer):
-    def __init__(self, args, index, budget:int, already_selected=[], epsilon: float=0.9):
+    def __init__(self, args, index, budget:int, already_selected=None, epsilon: float=0.9):
+        if already_selected is None:
+            already_selected = []
         super(StochasticGreedy, self).__init__(args, index, budget, already_selected)
         self.epsilon = epsilon
 
@@ -114,7 +122,9 @@ class StochasticGreedy(optimizer):
 
 
 class ApproximateLazyGreedy(optimizer):
-    def __init__(self, args, index, budget:int, already_selected=[], beta: float=0.9):
+    def __init__(self, args, index, budget:int, already_selected=None, beta: float=0.9):
+        if already_selected is None:
+            already_selected = []
         super(ApproximateLazyGreedy, self).__init__(args, index, budget, already_selected)
         self.beta = beta
 

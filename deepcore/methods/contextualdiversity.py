@@ -7,8 +7,9 @@ import torch
 
 
 class ContextualDiversity(kCenterGreedy):
-    def __init__(self, dst_train, args, fraction=0.5, random_seed=None, epochs=200,
-                 specific_model=None, balance=True, already_selected=[], torchvision_pretrain: bool = False, **kwargs):
+    def __init__(self, dst_train, args, fraction=0.5, random_seed=None, epochs=200, specific_model=None, balance=True, already_selected=None, torchvision_pretrain: bool = False, **kwargs):
+        if already_selected is None:
+            already_selected = []
         super(ContextualDiversity, self).__init__(dst_train, args, fraction, random_seed, epochs=epochs, specific_model=specific_model, balance=balance, already_selected=already_selected, torchvision_pretrain=torchvision_pretrain, **kwargs)
         self.metric = self._metric
 

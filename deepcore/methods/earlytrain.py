@@ -41,15 +41,15 @@ class EarlyTrain(CoresetMethod):
         dst_test (Dataset, optional): Test dataset. Defaults to None.
     """
 
-    def __init__(self, dst_train, args, fraction=0.5, random_seed=None, epochs=200, specific_model=None,
-                 torchvision_pretrain: bool = False, dst_pretrain_dict: dict = {}, fraction_pretrain=1., dst_test=None,
-                 **kwargs):
+    def __init__(self, dst_train, args, fraction=0.5, random_seed=None, epochs=200, specific_model=None, torchvision_pretrain: bool = False, dst_pretrain_dict: dict = None, fraction_pretrain=1., dst_test=None, **kwargs):
         """
         Initialize the EarlyTrain instance.
 
         Sets up the training environment, including dataset preparation, model selection,
         and optimization settings.
         """
+        if dst_pretrain_dict is None:
+            dst_pretrain_dict = {}
         super().__init__(dst_train, args, fraction, random_seed)
         self.epochs = epochs
         self.n_train = len(dst_train)
@@ -63,10 +63,10 @@ class EarlyTrain(CoresetMethod):
         if dst_pretrain_dict.__len__() != 0:
             dict_keys = dst_pretrain_dict.keys()
             if 'im_size' not in dict_keys or 'channel' not in dict_keys or 'dst_train' not in dict_keys or \
-                    'num_classes' not in dict_keys:
+                        'num_classes' not in dict_keys:
                 raise AttributeError(
                     'Argument dst_pretrain_dict must contain imszie, channel, dst_train and num_classes.')
-            if dst_pretrain_dict['im_size'][0] != args.im_size[0] or dst_pretrain_dict['im_size'][0] != args.im_size[0]:
+            if dst_pretrain_dict['im_size'][0] != args.im_size[0]:
                 raise ValueError("im_size of pretrain dataset does not match that of the training dataset.")
             if dst_pretrain_dict['channel'] != args.channel:
                 raise ValueError("channel of pretrain dataset does not match that of the training dataset.")
@@ -77,16 +77,13 @@ class EarlyTrain(CoresetMethod):
         self.torchvision_pretrain = torchvision_pretrain
         self.if_dst_pretrain = (len(self.dst_pretrain_dict) != 0)
 
-        if torchvision_pretrain:
-            # Pretrained models in torchvision only accept 224*224 inputs, therefore we resize current
-            # datasets to 224*224.
-            if args.im_size[0] != 224 or args.im_size[1] != 224:
-                self.dst_train = deepcopy(dst_train)
-                self.dst_train.transform = transforms.Compose([self.dst_train.transform, transforms.Resize(224)])
-                if self.if_dst_pretrain:
-                    self.dst_pretrain_dict['dst_train'] = deepcopy(dst_pretrain_dict['dst_train'])
-                    self.dst_pretrain_dict['dst_train'].transform = transforms.Compose(
-                        [self.dst_pretrain_dict['dst_train'].transform, transforms.Resize(224)])
+        if torchvision_pretrain and (args.im_size[0] != 224 or args.im_size[1] != 224):
+            self.dst_train = deepcopy(dst_train)
+            self.dst_train.transform = transforms.Compose([self.dst_train.transform, transforms.Resize(224)])
+            if self.if_dst_pretrain:
+                self.dst_pretrain_dict['dst_train'] = deepcopy(dst_pretrain_dict['dst_train'])
+                self.dst_pretrain_dict['dst_train'].transform = transforms.Compose(
+                    [self.dst_pretrain_dict['dst_train'].transform, transforms.Resize(224)])
         if self.if_dst_pretrain:
             self.n_pretrain = len(self.dst_pretrain_dict['dst_train'])
         self.n_pretrain_size = round(
@@ -316,5 +313,4 @@ class EarlyTrain(CoresetMethod):
         Returns:
             selection_result: Result of the selection process.
         """
-        selection_result = self.run()
-        return selection_result
+        return self.run()

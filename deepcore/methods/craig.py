@@ -50,7 +50,7 @@ class Craig(EarlyTrain):
 
         gradients = []
 
-        for i, (input, targets) in enumerate(batch_loader):
+        for input, targets in batch_loader:
             self.model_optimizer.zero_grad()
             outputs = self.model(input.to(self.args.device))
             loss = self.criterion(outputs.requires_grad_(True),
@@ -118,5 +118,4 @@ class Craig(EarlyTrain):
         return {"indices": selection_result, "weights": weights}
 
     def select(self, **kwargs):
-        selection_result = self.run()
-        return selection_result
+        return self.run()

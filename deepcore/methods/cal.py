@@ -18,15 +18,12 @@ class Cal(EarlyTrain):
         assert neighbors > 0 and neighbors < 100
         self.neighbors = neighbors
 
-        if metric == "euclidean":
+        if metric == "euclidean" or metric != "cossim" and not callable(metric):
             self.metric = euclidean_dist_pair_np
         elif metric == "cossim":
             self.metric = lambda a, b: -1. * cossim_pair_np(a, b)
-        elif callable(metric):
-            self.metric = metric
         else:
-            self.metric = euclidean_dist_pair_np
-
+            self.metric = metric
         self.pretrain_model = pretrain_model
 
     def num_classes_mismatch(self):
@@ -136,5 +133,4 @@ class Cal(EarlyTrain):
 
     def select(self, **kwargs):
         self.knn = self.find_knn()
-        selection_result = self.run()
-        return selection_result
+        return self.run()

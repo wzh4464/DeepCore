@@ -12,7 +12,7 @@ class WeightedSubset(torch.utils.data.Subset):
 
     def __getitem__(self, idx):
         if isinstance(idx, list):
-            return self.dataset[[self.indices[i] for i in idx]], self.weights[[i for i in idx]]
+            return self.dataset[[self.indices[i] for i in idx]], self.weights[list(idx)]
         return self.dataset[self.indices[idx]], self.weights[idx]
 
 

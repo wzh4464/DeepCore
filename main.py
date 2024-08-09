@@ -118,7 +118,7 @@ def main():
     # Load or initialize checkpoint
     if args.resume != "":
         try:
-            print("=> Loading checkpoint '{}'".format(args.resume))
+            print(f"=> Loading checkpoint '{args.resume}'")
             checkpoint = torch.load(args.resume, map_location=args.device)
             # Verify checkpoint contents
             assert {"exp", "epoch", "state_dict", "opt_dict", "best_acc1", "rec", "subset", "sel_args"} <= set(
@@ -154,10 +154,37 @@ def main():
 
         # Print experiment information
         print('\n================== Exp %d ==================\n' % exp)
-        print("dataset: ", args.dataset, ", model: ", args.model, ", selection: ", args.selection, ", num_ex: ",
-              args.num_exp, ", epochs: ", args.epochs, ", fraction: ", args.fraction, ", seed: ", args.seed,
-              ", lr: ", args.lr, ", save_path: ", args.save_path, ", resume: ", args.resume, ", device: ", args.device,
-              ", checkpoint_name: " + checkpoint_name if args.save_path != "" else "", "\n", sep="")
+        print(
+            "dataset: ",
+            args.dataset,
+            ", model: ",
+            args.model,
+            ", selection: ",
+            args.selection,
+            ", num_ex: ",
+            args.num_exp,
+            ", epochs: ",
+            args.epochs,
+            ", fraction: ",
+            args.fraction,
+            ", seed: ",
+            args.seed,
+            ", lr: ",
+            args.lr,
+            ", save_path: ",
+            args.save_path,
+            ", resume: ",
+            args.resume,
+            ", device: ",
+            args.device,
+            (
+                f", checkpoint_name: {checkpoint_name}"
+                if args.save_path != ""
+                else ""
+            ),
+            "\n",
+            sep="",
+        )
 
         # Load dataset
         channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = datasets.__dict__[args.dataset](args.data_path)
@@ -180,7 +207,7 @@ def main():
         print(len(subset["indices"]))
 
         # Data augmentation
-        if args.dataset == "CIFAR10" or args.dataset == "CIFAR100":
+        if args.dataset in ["CIFAR10", "CIFAR100"]:
             dst_train.transform = transforms.Compose(
                 [transforms.RandomCrop(args.im_size, padding=4, padding_mode="reflect"),
                  transforms.RandomHorizontalFlip(), dst_train.transform])
@@ -201,7 +228,7 @@ def main():
                                    num_workers=args.workers, pin_memory=True) if args.dataset == "ImageNet" else \
             torch.utils.data.DataLoader(dst_subset, batch_size=args.train_batch, shuffle=True,
                                         num_workers=args.workers, pin_memory=True)
-        
+
         test_loader = DataLoaderX(dst_test, batch_size=args.train_batch, shuffle=False,
                                   num_workers=args.workers, pin_memory=True) if args.dataset == "ImageNet" else \
             torch.utils.data.DataLoader(dst_test, batch_size=args.train_batch, shuffle=False,
@@ -212,7 +239,7 @@ def main():
 
         for model in models:
             if len(models) > 1:
-                print("| Training on model %s" % model)
+                print(f"| Training on model {model}")
 
             # Initialize network
             network = nets.__dict__[model](channel, num_classes, im_size).to(args.device)
@@ -256,9 +283,17 @@ def main():
 
             # Save initial checkpoint if needed
             if args.save_path != "" and args.resume == "":
-                save_checkpoint({"exp": exp, "subset": subset, "sel_args": selection_args},
-                                os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else model + "_") + "unknown.ckpt"),
-                                0, 0.)
+                save_checkpoint(
+                    {"exp": exp, "subset": subset, "sel_args": selection_args},
+                    os.path.join(
+                        args.save_path,
+                        checkpoint_name
+                        + ("" if model == args.model else f"{model}_")
+                        + "unknown.ckpt",
+                    ),
+                    0,
+                    0.0,
+                )
 
             # Training loop
             for epoch in range(start_epoch, args.epochs):
@@ -275,26 +310,80 @@ def main():
                         best_prec1 = prec1
                         if args.save_path != "":
                             rec = record_ckpt(rec, epoch)
-                            save_checkpoint({"exp": exp, "epoch": epoch + 1, "state_dict": network.state_dict(),
-                                             "opt_dict": optimizer.state_dict(), "best_acc1": best_prec1,
-                                             "rec": rec, "subset": subset, "sel_args": selection_args},
-                                            os.path.join(args.save_path, checkpoint_name + 
-                                                         ("" if model == args.model else model + "_") + "unknown.ckpt"),
-                                            epoch=epoch, prec=best_prec1)
+                            save_checkpoint(
+                                {
+                                    "exp": exp,
+                                    "epoch": epoch + 1,
+                                    "state_dict": network.state_dict(),
+                                    "opt_dict": optimizer.state_dict(),
+                                    "best_acc1": best_prec1,
+                                    "rec": rec,
+                                    "subset": subset,
+                                    "sel_args": selection_args,
+                                },
+                                os.path.join(
+                                    args.save_path,
+                                    (
+                                        (
+                                            checkpoint_name
+                                            + (
+                                                ""
+                                                if model == args.model
+                                                else f"{model}_"
+                                            )
+                                        )
+                                        + "unknown.ckpt"
+                                    ),
+                                ),
+                                epoch=epoch,
+                                prec=best_prec1,
+                            )
 
             # Rename or save final checkpoint
             if args.save_path != "":
                 try:
-                    os.rename(os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else model + "_") + "unknown.ckpt"),
-                              os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else model + "_") + "%f.ckpt" % best_prec1))
-                except:
-                    save_checkpoint({"exp": exp, "epoch": args.epochs, "state_dict": network.state_dict(),
-                                     "opt_dict": optimizer.state_dict(), "best_acc1": best_prec1,
-                                     "rec": rec, "subset": subset, "sel_args": selection_args},
-                                    os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else model + "_") + "%f.ckpt" % best_prec1),
-                                    epoch=args.epochs - 1, prec=best_prec1)
+                    os.rename(
+                        os.path.join(
+                            args.save_path,
+                            checkpoint_name
+                            + ("" if model == args.model else f"{model}_")
+                            + "unknown.ckpt",
+                        ),
+                        os.path.join(
+                            args.save_path,
+                            checkpoint_name
+                            + ("" if model == args.model else f"{model}_")
+                            + "%f.ckpt" % best_prec1,
+                        ),
+                    )
+                except Exception:
+                    save_checkpoint(
+                        {
+                            "exp": exp,
+                            "epoch": args.epochs,
+                            "state_dict": network.state_dict(),
+                            "opt_dict": optimizer.state_dict(),
+                            "best_acc1": best_prec1,
+                            "rec": rec,
+                            "subset": subset,
+                            "sel_args": selection_args,
+                        },
+                        os.path.join(
+                            args.save_path,
+                            checkpoint_name
+                            + ("" if model == args.model else f"{model}_")
+                            + "%f.ckpt" % best_prec1,
+                        ),
+                        epoch=args.epochs - 1,
+                        prec=best_prec1,
+                    )
 
-            print('| Best accuracy: ', best_prec1, ", on model " + model if len(models) > 1 else "", end="\n\n")
+            print(
+                '| Best accuracy: ',
+                best_prec1,
+                f", on model {model}" if len(models) > 1 else "",
+                end="\n\n",
+            )
             start_epoch = 0
             checkpoint = {}
             sleep(2)
