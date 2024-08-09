@@ -4,11 +4,13 @@ import argparse
 import deepcore.nets as nets
 import deepcore.datasets as datasets
 import deepcore.methods as methods
+from deepcore.methods.selection_methods import SELECTION_METHODS
+from deepcore.methods.coresetmethod import CoresetMethod
 from torchvision import transforms
 from utils import *
 from datetime import datetime
 from time import sleep
-
+from typing import Type
 
 def parse_args():
     """Parse command line arguments."""
@@ -170,7 +172,17 @@ def initialize_dataset_and_model(args, checkpoint):
     else:
         selection_args = dict(epochs=args.selection_epochs, selection_method=args.uncertainty, balance=args.balance, 
                               greedy=args.submodular_greedy, function=args.submodular)
-        method = methods.__dict__[args.selection](dst_train, args, args.fraction, args.seed, **selection_args)
+        # get the selection method class
+        try:
+            method_class: Type[CoresetMethod] = SELECTION_METHODS.get(args.selection)
+            if method_class is None:
+                raise ValueError(f"Selection method {args.selection} not found. Available methods: {SELECTION_METHODS.keys()}")
+        except Exception as e:
+            print(f"An error occurred while selecting the method: {e}")
+            raise e
+
+        # run selection method
+        method: CoresetMethod = method_class(dst_train, args, args.fraction, args.seed, **selection_args)
         subset = method.select()
 
     if args.dataset in ["CIFAR10", "CIFAR100"]:
