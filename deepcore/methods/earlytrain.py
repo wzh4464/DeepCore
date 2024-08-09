@@ -8,13 +8,48 @@ from torchvision import transforms
 
 
 class EarlyTrain(CoresetMethod):
-    '''
+    """
     Core code for training related to coreset selection methods when pre-training is required.
-    '''
+
+    This class provides a framework for implementing coreset selection methods that involve
+    pre-training or early training stages. It handles the setup of the training environment,
+    including model initialization, optimizer setup, and the training loop.
+
+    Attributes:
+        epochs (int): Number of epochs to train.
+        n_train (int): Number of samples in the training dataset.
+        coreset_size (int): Size of the coreset to be selected.
+        specific_model (str): Name of a specific model to use, if any.
+        fraction_pretrain (float): Fraction of the dataset to use for pretraining.
+        dst_pretrain_dict (dict): Dictionary containing pretraining dataset information.
+        torchvision_pretrain (bool): Whether to use pretrained models from torchvision.
+        if_dst_pretrain (bool): Whether a separate pretraining dataset is provided.
+        n_pretrain (int): Number of samples in the pretraining dataset.
+        n_pretrain_size (int): Number of samples to use for pretraining.
+        dst_test (Dataset): Test dataset, if provided.
+
+    Args:
+        dst_train (Dataset): The training dataset.
+        args (argparse.Namespace): Arguments containing various settings.
+        fraction (float, optional): Fraction of the dataset to select as coreset. Defaults to 0.5.
+        random_seed (int, optional): Seed for random number generation. Defaults to None.
+        epochs (int, optional): Number of training epochs. Defaults to 200.
+        specific_model (str, optional): Name of a specific model to use. Defaults to None.
+        torchvision_pretrain (bool, optional): Whether to use pretrained models from torchvision. Defaults to False.
+        dst_pretrain_dict (dict, optional): Dictionary containing pretraining dataset information. Defaults to {}.
+        fraction_pretrain (float, optional): Fraction of the dataset to use for pretraining. Defaults to 1.0.
+        dst_test (Dataset, optional): Test dataset. Defaults to None.
+    """
 
     def __init__(self, dst_train, args, fraction=0.5, random_seed=None, epochs=200, specific_model=None,
                  torchvision_pretrain: bool = False, dst_pretrain_dict: dict = {}, fraction_pretrain=1., dst_test=None,
                  **kwargs):
+        """
+        Initialize the EarlyTrain instance.
+
+        Sets up the training environment, including dataset preparation, model selection,
+        and optimization settings.
+        """
         super().__init__(dst_train, args, fraction, random_seed)
         self.epochs = epochs
         self.n_train = len(dst_train)
@@ -59,8 +94,16 @@ class EarlyTrain(CoresetMethod):
         self.dst_test = dst_test
 
     def train(self, epoch, list_of_train_idx, **kwargs):
-        """ Train model for one epoch """
+        """
+        Train the model for one epoch.
 
+        Args:
+            epoch (int): Current epoch number.
+            list_of_train_idx (list): List of indices for training samples.
+
+        Returns:
+            The result of finish_train method.
+        """
         self.before_train()
         self.model.train()
 
@@ -94,6 +137,14 @@ class EarlyTrain(CoresetMethod):
         return self.finish_train()
 
     def run(self):
+        """
+        Run the entire training process.
+
+        This method sets up the model, optimizer, and runs the training loop for the specified number of epochs.
+
+        Returns:
+            The result of finish_run method.
+        """
         torch.manual_seed(self.random_seed)
         np.random.seed(self.random_seed)
         self.train_indx = np.arange(self.n_train)
@@ -146,6 +197,12 @@ class EarlyTrain(CoresetMethod):
         return self.finish_run()
 
     def test(self, epoch):
+        """
+        Test the model's performance.
+
+        Args:
+            epoch (int): Current epoch number.
+        """
         self.model.no_grad = True
         self.model.eval()
 
@@ -178,32 +235,86 @@ class EarlyTrain(CoresetMethod):
         self.model.no_grad = False
 
     def num_classes_mismatch(self):
+        """
+        Handle mismatch in number of classes between pretraining and training datasets.
+        """
         pass
 
     def before_train(self):
+        """
+        Perform actions before training starts.
+        """
         pass
 
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
+        """
+        Perform actions after loss computation.
+
+        Args:
+            outputs: Model outputs.
+            loss: Computed loss.
+            targets: Ground truth labels.
+            batch_inds: Indices of the current batch.
+            epoch: Current epoch number.
+        """
         pass
 
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
+        """
+        Perform actions during the update step.
+
+        Args:
+            outputs: Model outputs.
+            loss: Computed loss.
+            targets: Ground truth labels.
+            epoch: Current epoch number.
+            batch_idx: Current batch index.
+            batch_size: Size of the current batch.
+        """
         pass
 
     def finish_train(self):
+        """
+        Perform actions after training is finished.
+
+        Returns:
+            Any result from the training process.
+        """
         pass
 
     def before_epoch(self):
+        """
+        Perform actions before each epoch starts.
+        """
         pass
 
     def after_epoch(self):
+        """
+        Perform actions after each epoch ends.
+        """
         pass
 
     def before_run(self):
+        """
+        Perform actions before the entire run starts.
+        """
         pass
 
     def finish_run(self):
+        """
+        Perform actions after the entire run is finished.
+
+        Returns:
+            Any result from the run process.
+        """
         pass
 
     def select(self, **kwargs):
+        """
+        Perform the selection process.
+
+        Returns:
+            selection_result: Result of the selection process.
+        """
         selection_result = self.run()
         return selection_result
