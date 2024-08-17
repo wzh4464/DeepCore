@@ -1,14 +1,15 @@
 ###
-# File: /oti.py
-# Created Date: Friday, August 9th 2024
-# Author: Zihan
-# -----
-# Last Modified: Friday, 9th August 2024 6:00:28 pm
-# Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
-# -----
-# HISTORY:
-# Date      		By   	Comments
-# ----------		------	---------------------------------------------------------
+ # File: /oti.py
+ # Created Date: Friday, August 9th 2024
+ # Author: Zihan
+ # -----
+ # Last Modified: Saturday, 17th August 2024 10:30:24 pm
+ # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
+ # -----
+ # HISTORY:
+ # Date      		By   	Comments
+ # ----------		------	---------------------------------------------------------
+ # 2024-08-17        Zihan	Added epoch usage tracking and removed manual memory clearing
 ###
 
 import os
@@ -57,10 +58,30 @@ class OTI(EarlyTrain):
 
         self.current_epoch = 0
         self.current_step = 0
-        self.total_params_processed = 0
-        self.epoch_data_orders = {}  # To store the data order for each epoch
-        self.current_epoch_parameters = []  # To store the parameters for the current epoch
-
+        self.total_params_processed = 0 # Total number of parameters processed
+        self.epoch_data_orders = {} # Store the data order for each epoch
+        self.current_epoch_parameters = [] # Store parameters for the current epoch
+        self.best_params = None # To store the best parameters
+        self.best_loss = float('inf') # To store the best loss
+        self.epoch_losses = []  # Track losses for each epoch
+        self.epoch_usage = []  # Track whether each epoch was actually used
+        self.initial_params = None  # To store initial parameters
+        
+    def before_run(self):
+        """
+        Perform actions before the entire run starts.
+        This method is called at the beginning of the `run` method.
+        """
+        super().before_run()
+        # Store initial parameters
+        self.initial_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
+        
+        # Save initial parameters
+        initial_params_path = os.path.join(self.args.save_path, "initial_params.pkl")
+        with open(initial_params_path, "wb") as f:
+            pickle.dump(self.initial_params, f)
+        print(f"[OTI] Initial parameters saved to {initial_params_path}")
+        
     def train(self, epoch, list_of_train_idx):
         self.epoch_data_orders[epoch] = (
             list_of_train_idx.copy()
@@ -90,10 +111,16 @@ class OTI(EarlyTrain):
         # Store parameters on CPU
         current_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
 
+        # Update best parameters if current loss is lower
+        if loss.item() < self.best_loss:
+            self.best_loss = loss.item()
+            self.best_params = current_params
+
         self.current_epoch_parameters.append({
             "step": self.current_step,
             "data_idx": self.epoch_data_orders[epoch][batch_idx],
-            "params": current_params
+            "params": current_params,
+            "loss": loss.item()  # Store the loss separately
         })
 
         self.total_params_processed += 1
@@ -102,23 +129,35 @@ class OTI(EarlyTrain):
     def after_epoch(self):
         super().after_epoch()
 
-        # Save parameters and data order for the epoch without compression
+        # Calculate average loss for the epoch
+        epoch_loss = np.mean([param_dict['loss'] for param_dict in self.current_epoch_parameters])
+        self.epoch_losses.append(epoch_loss)
+
+        # Determine if this epoch was actually used (loss decreased)
+        epoch_used = True if len(self.epoch_losses) == 1 else self.epoch_losses[-1] < self.epoch_losses[-2]
+        self.epoch_usage.append(epoch_used)
+
+        # Save parameters and data order for the epoch
         file_path = os.path.join(self.args.save_path, f"epoch_{self.current_epoch}_data.pkl")
 
         with open(file_path, "wb") as f:
             pickle.dump({
                 "parameters": self.current_epoch_parameters,
-                "data_order": self.epoch_data_orders[self.current_epoch]
+                "data_order": self.epoch_data_orders[self.current_epoch],
+                "average_loss": epoch_loss,
+                "epoch_used": epoch_used
             }, f)
 
         print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
-
-        # Clear the current epoch parameters from memory
-        self.current_epoch_parameters.clear()
+        print(f"[OTI] Epoch {self.current_epoch} average loss: {epoch_loss:.4f}")
+        print(f"[OTI] Epoch {self.current_epoch} used: {epoch_used}")
 
         # Reset step counter and increment epoch counter
         self.current_step = 0
         self.current_epoch += 1
+        self.current_epoch_parameters = []  # Clear the list for the next epoch
+
+        # Note: We no longer manually clear self.current_epoch_parameters
 
     def get_params(self, epoch, step):
         """
@@ -165,15 +204,14 @@ class OTI(EarlyTrain):
             raise ValueError(f"No parameters found for step {step} in epoch {epoch}")
 
         if params_before is None:
-            if epoch > 0:
-                # If it's the first step of an epoch, get the last step of the previous epoch
-                prev_epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch-1}_data.pkl")
-                with open(prev_epoch_file, "rb") as f:
-                    prev_epoch_data = pickle.load(f)
-                params_before = prev_epoch_data["parameters"][-1]["params"]
-            else:
+            if epoch <= 0:
                 raise ValueError(f"No parameters found before step {step} in epoch {epoch}")
 
+            # If it's the first step of an epoch, get the last step of the previous epoch
+            prev_epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch-1}_data.pkl")
+            with open(prev_epoch_file, "rb") as f:
+                prev_epoch_data = pickle.load(f)
+            params_before = prev_epoch_data["parameters"][-1]["params"]
         return params_before, params_after, data_idx
 
     def get_data_order(self, epoch):
@@ -237,13 +275,37 @@ class OTI(EarlyTrain):
         return {"indices": selected_indices, "scores": scores}
 
     def finish_run(self):
-        # Clean up temporary files if needed
-        for epoch in range(self.epochs):
-            file_path = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        print("[OTI] Cleaned up temporary parameter files")
+        """
+        Finish the run by saving the best parameters and preserving all intermediate results.
 
+        This method saves the best parameters to a separate file and keeps all the intermediate
+        epoch data files for further analysis or debugging purposes.
+        """
+        # Save the best parameters
+        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
+        with open(best_params_path, "wb") as f:
+            pickle.dump(self.best_params, f)
+        print(f"[OTI] Best parameters saved to {best_params_path}")
+
+        # Log the preservation of intermediate results
+        print("[OTI] Preserving all intermediate epoch data files for further analysis.")
+        
+        # List all preserved files and their usage status
+        preserved_files = [f for f in os.listdir(self.args.save_path) if f.startswith("epoch_") and f.endswith("_data.pkl")]
+        print(f"[OTI] Preserved {len(preserved_files)} epoch data files:")
+        for i, file in enumerate(preserved_files):
+            print(f"  - {file} (Used: {self.epoch_usage[i]})")
+
+        print("[OTI] Run finished. All intermediate results have been preserved.")
+
+    def load_best_params(self):
+        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
+        if os.path.exists(best_params_path):
+            with open(best_params_path, "rb") as f:
+                return pickle.load(f)
+        else:
+            print("[OTI] Best parameters file not found.")
+            return None
 
 # Add OTI to SELECTION_METHODS
 SELECTION_METHODS["OTI"] = OTI
