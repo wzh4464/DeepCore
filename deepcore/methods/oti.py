@@ -16,12 +16,7 @@ from .selection_methods import SELECTION_METHODS
 from .earlytrain import EarlyTrain
 import torch
 import numpy as np
-from copy import deepcopy
-
-import os
-import gzip
 import pickle
-
 
 class OTI(EarlyTrain):
     """
@@ -90,53 +85,33 @@ class OTI(EarlyTrain):
             print(
                 f"| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
             )
-            print("[OTI] Saving model parameters and calculating scores...")
+            print("[OTI] Saving model parameters...")
 
-        current_params = self.model.state_dict()
+        # Store parameters on CPU
+        current_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
 
-        # # Calculate score if we have previous parameters
-        # if len(self.current_epoch_parameters) > 0:
-        #     last_params = self.current_epoch_parameters[-1]["params"]
-        #     score = sum(
-        #         torch.norm(current_params[name] - last_params[name]).item()
-        #         for name in current_params
-        #         if name in last_params
-        #     )
-        #     self.scores.append(score)
+        self.current_epoch_parameters.append({
+            "step": self.current_step,
+            "data_idx": self.epoch_data_orders[epoch][batch_idx],
+            "params": current_params
+        })
 
-        # Save current parameters with step and data point information
-        self.current_epoch_parameters.append(
-            {
-                "step": self.current_step,
-                "data_idx": self.epoch_data_orders[epoch][batch_idx],
-                "params": current_params,
-            }
-        )
-
-        # Update total parameters processed
         self.total_params_processed += 1
         self.current_step += 1
 
     def after_epoch(self):
         super().after_epoch()
 
-        # Compress and save parameters and data order for the epoch
-        compressed_file_path = os.path.join(
-            self.args.save_path, f"epoch_{self.current_epoch}_data.gz"
-        )
+        # Save parameters and data order for the epoch without compression
+        file_path = os.path.join(self.args.save_path, f"epoch_{self.current_epoch}_data.pkl")
 
-        with gzip.open(compressed_file_path, "wb") as f:
-            pickle.dump(
-                {
-                    "parameters": self.current_epoch_parameters,
-                    "data_order": self.epoch_data_orders[self.current_epoch],
-                },
-                f,
-            )
+        with open(file_path, "wb") as f:
+            pickle.dump({
+                "parameters": self.current_epoch_parameters,
+                "data_order": self.epoch_data_orders[self.current_epoch]
+            }, f)
 
-        print(
-            f"[OTI] Compressed parameters and data order saved for epoch {self.current_epoch}"
-        )
+        print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
 
         # Clear the current epoch parameters from memory
         self.current_epoch_parameters.clear()
@@ -156,11 +131,10 @@ class OTI(EarlyTrain):
         Returns:
             dict: The model parameters at the specified epoch and step.
         """
-        epoch_data = self._load_compressed_epoch_data(epoch)
+        epoch_data = self._load_epoch_data(epoch)
         for param_dict in epoch_data["parameters"]:
             if param_dict["step"] == step:
                 return param_dict["params"]
-
         raise ValueError(f"No parameters found for step {step} in epoch {epoch}")
 
     def get_params_before_after(self, epoch, step):
@@ -174,7 +148,7 @@ class OTI(EarlyTrain):
         Returns:
             tuple: A tuple containing two dictionaries (params_before, params_after) and the data point index.
         """
-        epoch_data = self._load_compressed_epoch_data(epoch)
+        epoch_data = self._load_epoch_data(epoch)
         params_before = None
         params_after = None
         data_idx = None
@@ -193,16 +167,12 @@ class OTI(EarlyTrain):
         if params_before is None:
             if epoch > 0:
                 # If it's the first step of an epoch, get the last step of the previous epoch
-                prev_epoch_file = os.path.join(
-                    self.args.save_path, f"epoch_{epoch-1}_data.gz"
-                )
-                with gzip.open(prev_epoch_file, "rb") as f:
+                prev_epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch-1}_data.pkl")
+                with open(prev_epoch_file, "rb") as f:
                     prev_epoch_data = pickle.load(f)
                 params_before = prev_epoch_data["parameters"][-1]["params"]
             else:
-                raise ValueError(
-                    f"No parameters found before step {step} in epoch {epoch}"
-                )
+                raise ValueError(f"No parameters found before step {step} in epoch {epoch}")
 
         return params_before, params_after, data_idx
 
@@ -216,10 +186,10 @@ class OTI(EarlyTrain):
         Returns:
             list: The order of data points used in the specified epoch.
         """
-        epoch_data = self._load_compressed_epoch_data(epoch)
+        epoch_data = self._load_epoch_data(epoch)
         return epoch_data["data_order"]
 
-    def _load_compressed_epoch_data(self, epoch):
+    def _load_epoch_data(self, epoch):
         """
         Load compressed data for a specific epoch.
 
@@ -232,36 +202,25 @@ class OTI(EarlyTrain):
         Raises:
             ValueError: If no data is found for the specified epoch.
         """
-        compressed_file_path = os.path.join(
-            self.args.save_path, f"epoch_{epoch}_data.gz"
-        )
-        if not os.path.exists(compressed_file_path):
+        file_path = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
+        if not os.path.exists(file_path):
             raise ValueError(f"No data found for epoch {epoch}")
-        with gzip.open(compressed_file_path, "rb") as f:
-            result = pickle.load(f)
-        return result
+        with open(file_path, "rb") as f:
+            return pickle.load(f)
 
     def calculate_scores(self):
         all_scores = []
         for epoch in range(self.epochs):
-            compressed_file_path = os.path.join(
-                self.args.save_path, f"params_epoch_{epoch}.gz"
-            )
-            with gzip.open(compressed_file_path, "rb") as f:
-                epoch_parameters = pickle.load(f)
+            epoch_data = self._load_epoch_data(epoch)
+            epoch_parameters = epoch_data["parameters"]
 
-            epoch_scores = []
             for i in range(1, len(epoch_parameters)):
                 score = sum(
-                    torch.norm(
-                        epoch_parameters[i][name] - epoch_parameters[i - 1][name]
-                    ).item()
-                    for name in epoch_parameters[i]
-                    if name in epoch_parameters[i - 1]
+                    torch.norm(epoch_parameters[i]["params"][name] - epoch_parameters[i-1]["params"][name]).item()
+                    for name in epoch_parameters[i]["params"]
+                    if name in epoch_parameters[i-1]["params"]
                 )
-                epoch_scores.append(score)
-
-            all_scores.extend(epoch_scores)
+                all_scores.append(score)
 
         return np.array(all_scores)
 
@@ -280,12 +239,9 @@ class OTI(EarlyTrain):
     def finish_run(self):
         # Clean up temporary files if needed
         for epoch in range(self.epochs):
-            compressed_file_path = os.path.join(
-                self.args.save_path, f"params_epoch_{epoch}.gz"
-            )
-            if os.path.exists(compressed_file_path):
-                os.remove(compressed_file_path)
-
+            file_path = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
+            if os.path.exists(file_path):
+                os.remove(file_path)
         print("[OTI] Cleaned up temporary parameter files")
 
 
