@@ -3,7 +3,7 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Saturday, 17th August 2024 10:30:24 pm
+ # Last Modified: Monday, 19th August 2024 4:42:24 pm
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
@@ -129,27 +129,26 @@ class OTI(EarlyTrain):
     def after_epoch(self):
         super().after_epoch()
 
-        # Calculate average loss for the epoch
-        epoch_loss = np.mean([param_dict['loss'] for param_dict in self.current_epoch_parameters])
-        self.epoch_losses.append(epoch_loss)
+        # Get the loss of the last parameter update in this epoch
+        latest_loss = self.current_epoch_parameters[-1]['loss']
+        self.epoch_losses.append(latest_loss)
 
         # Determine if this epoch was actually used (loss decreased)
         epoch_used = True if len(self.epoch_losses) == 1 else self.epoch_losses[-1] < self.epoch_losses[-2]
         self.epoch_usage.append(epoch_used)
 
-        # Save parameters and data order for the epoch
         file_path = os.path.join(self.args.save_path, f"epoch_{self.current_epoch}_data.pkl")
 
         with open(file_path, "wb") as f:
             pickle.dump({
                 "parameters": self.current_epoch_parameters,
                 "data_order": self.epoch_data_orders[self.current_epoch],
-                "average_loss": epoch_loss,
+                "latest_loss": latest_loss,
                 "epoch_used": epoch_used
             }, f)
 
         print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
-        print(f"[OTI] Epoch {self.current_epoch} average loss: {epoch_loss:.4f}")
+        print(f"[OTI] Epoch {self.current_epoch} latest loss: {latest_loss:.4f}")
         print(f"[OTI] Epoch {self.current_epoch} used: {epoch_used}")
 
         # Reset step counter and increment epoch counter
