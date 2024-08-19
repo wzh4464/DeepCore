@@ -3,7 +3,7 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Monday, 19th August 2024 4:42:24 pm
+ # Last Modified: Monday, 19th August 2024 9:42:43 pm
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
@@ -18,6 +18,8 @@ from .earlytrain import EarlyTrain
 import torch
 import numpy as np
 import pickle
+import torch.multiprocessing as mp
+from tqdm import tqdm
 
 class OTI(EarlyTrain):
     """
@@ -245,33 +247,97 @@ class OTI(EarlyTrain):
         with open(file_path, "rb") as f:
             return pickle.load(f)
 
-    def calculate_scores(self):
-        all_scores = []
-        for epoch in range(self.epochs):
+    def calculate_l2_distance(self, params1, params2, device):
+        """Calculate L2 distance between two parameter sets"""
+        return sum(torch.norm(params1[name].to(device) - params2[name].to(device)).item() for name in params1 if name in params2)
+
+    def gpu_worker(self, gpu_id, epochs, return_dict):
+        """Worker function for GPU-based score calculation"""
+        device = torch.device(f"cuda:{gpu_id}")
+        best_params = {k: v.to(device) for k, v in self.load_best_params().items()}
+        initial_params = {k: v.to(device) for k, v in self.initial_params.items()}
+
+        local_scores = {}
+
+        for epoch in epochs:
             epoch_data = self._load_epoch_data(epoch)
-            epoch_parameters = epoch_data["parameters"]
+            parameters = epoch_data["parameters"]
+            data_order = epoch_data["data_order"]
 
-            for i in range(1, len(epoch_parameters)):
-                score = sum(
-                    torch.norm(epoch_parameters[i]["params"][name] - epoch_parameters[i-1]["params"][name]).item()
-                    for name in epoch_parameters[i]["params"]
-                    if name in epoch_parameters[i-1]["params"]
-                )
-                all_scores.append(score)
+            for i in tqdm(range(len(parameters)), desc=f"GPU {gpu_id} - Epoch {epoch}", position=gpu_id):
+                data_idx = data_order[i]
 
-        return np.array(all_scores)
+                if i == 0 and epoch == min(epochs):
+                    prev_params = initial_params
+                elif i == 0:
+                    prev_params = {k: v.to(device) for k, v in self._load_epoch_data(epoch-1)["parameters"][-1]["params"].items()}
+                else:
+                    prev_params = {k: v.to(device) for k, v in parameters[i-1]["params"].items()}
+
+                current_params = {k: v.to(device) for k, v in parameters[i]["params"].items()}
+
+                prev_distance = self.calculate_l2_distance(prev_params, best_params, device)
+                current_distance = self.calculate_l2_distance(current_params, best_params, device)
+
+                score = prev_distance - current_distance
+
+                if data_idx not in local_scores:
+                    local_scores[data_idx] = score
+                else:
+                    local_scores[data_idx] += score
+
+            torch.cuda.empty_cache()
+
+        return_dict[gpu_id] = local_scores
+
+    def calculate_scores(self):
+        """Calculate scores using multiple GPUs"""
+        manager = mp.Manager()
+        return_dict = manager.dict()
+
+        epochs_per_gpu = [list(range(i, self.epochs, self.num_gpus)) for i in range(self.num_gpus)]
+
+        processes = []
+        for gpu_id in range(self.num_gpus):
+            p = mp.Process(target=self.gpu_worker, args=(gpu_id, epochs_per_gpu[gpu_id], return_dict))
+            processes.append(p)
+            p.start()
+
+        for p in processes:
+            p.join()
+
+        total_scores = {}
+        for gpu_scores in return_dict.values():
+            for idx, score in gpu_scores.items():
+                if idx not in total_scores:
+                    total_scores[idx] = score
+                else:
+                    total_scores[idx] += score
+
+        return total_scores
 
     def select(self, **kwargs):
+        """
+        Select the subset based on calculated scores.
+
+        Returns:
+            dict: A dictionary containing the selected indices and their scores.
+        """
         # Run the training process
         self.run()
 
         # Calculate final scores
         scores = self.calculate_scores()
 
-        # Select top-k samples based on the scores
-        selected_indices = np.argsort(scores)[-self.coreset_size :]
+        # Convert scores to numpy array
+        score_array = np.array(list(scores.values()))
+        indices = np.array(list(scores.keys()))
 
-        return {"indices": selected_indices, "scores": scores}
+        # Select top-k samples based on the scores
+        top_k = self.coreset_size
+        selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
+
+        return {"indices": selected_indices, "scores": score_array}
 
     def finish_run(self):
         """
