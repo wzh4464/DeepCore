@@ -90,6 +90,10 @@ def parse_args():
     parser.add_argument('--save_path', "-sp", type=str, default='', help='path to save results (default: do not save)')
     parser.add_argument('--resume', '-r', type=str, default='', help="path to latest checkpoint (default: do not load)")
 
+    # oti
+    parser.add_argument('--num_gpus', type=int, default=3, help='number of GPUs to use for OTI')
+    parser.add_argument('--oti_mode', type=str, default='scores', choices=['full', 'stored', 'scores'], help='OTI operation mode')
+
     args = parser.parse_args()
     args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     return args
@@ -203,6 +207,12 @@ def initialize_dataset_and_model(args, checkpoint):
                               pin_memory=True) if args.dataset == "ImageNet" else torch.utils.data.DataLoader(dst_test, 
                                                                                                                batch_size=args.train_batch, shuffle=False, 
                                                                                                                num_workers=args.workers, pin_memory=True)
+                              
+    if args.selection == 'OTI':
+        method = method_class(dst_train, args, args.fraction, args.seed, num_gpus=args.num_gpus, mode=args.oti_mode, **selection_args)
+    else:
+        method = method_class(dst_train, args, args.fraction, args.seed, **selection_args)
+        
     return train_loader, test_loader, if_weighted, subset, selection_args
 
 

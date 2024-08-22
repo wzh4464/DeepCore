@@ -3,7 +3,7 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Monday, 19th August 2024 9:42:43 pm
+ # Last Modified: Tuesday, 20th August 2024 12:55:37 am
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
@@ -37,6 +37,9 @@ class OTI(EarlyTrain):
         random_seed=None,
         epochs=200,
         specific_model=None,
+        num_gpus=3,
+        mode='scores', # [full, stored, scores]
+        fractions=[0.8, 0.5, 0.3],  # New parameter for subset fractions
         **kwargs,
     ):
         """
@@ -68,7 +71,10 @@ class OTI(EarlyTrain):
         self.epoch_losses = []  # Track losses for each epoch
         self.epoch_usage = []  # Track whether each epoch was actually used
         self.initial_params = None  # To store initial parameters
-        
+        self.num_gpus = num_gpus
+        self.mode = mode
+        self.fractions = fractions
+
     def before_run(self):
         """
         Perform actions before the entire run starts.
@@ -316,6 +322,14 @@ class OTI(EarlyTrain):
 
         return total_scores
 
+    def load_scores(self):
+        """Load pre-computed scores from file"""
+        scores_path = os.path.join(self.args.save_path, "oti_scores.pkl")
+        if not os.path.exists(scores_path):
+            raise FileNotFoundError(f"Pre-computed scores not found at {scores_path}")
+        with open(scores_path, 'rb') as f:
+            return pickle.load(f)
+        
     def select(self, **kwargs):
         """
         Select the subset based on calculated scores.
@@ -323,11 +337,16 @@ class OTI(EarlyTrain):
         Returns:
             dict: A dictionary containing the selected indices and their scores.
         """
-        # Run the training process
-        self.run()
-
-        # Calculate final scores
-        scores = self.calculate_scores()
+        
+        if self.mode == 'full':
+            self.run()  # Run the training process
+            scores = self.calculate_scores()
+        elif self.mode == 'stored':
+            scores = self.calculate_scores()  # Use stored epoch data
+        elif self.mode == 'scores':
+            scores = self.load_scores()  # Load pre-computed scores
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
         # Convert scores to numpy array
         score_array = np.array(list(scores.values()))
