@@ -3,7 +3,7 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Tuesday, 20th August 2024 12:55:37 am
+ # Last Modified: Friday, 23rd August 2024 11:34:56 am
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
@@ -58,8 +58,7 @@ class OTI(EarlyTrain):
         )
 
         # Force batch size to 1 for OTI method
-        self.args.selection_batch = 1
-        self.args.train_batch = 1
+        # self.args.selection_batch = 1
 
         self.current_epoch = 0
         self.current_step = 0
@@ -91,6 +90,10 @@ class OTI(EarlyTrain):
         print(f"[OTI] Initial parameters saved to {initial_params_path}")
         
     def train(self, epoch, list_of_train_idx):
+        """
+        Get the train index for each epoch.
+        Insert a hook to store the data order for each epoch.
+        """
         self.epoch_data_orders[epoch] = (
             list_of_train_idx.copy()
         )  # Store the data order for this epoch
