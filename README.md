@@ -1,49 +1,56 @@
 # DeepCore: A Comprehensive Library for Coreset Selection in Deep Learning [PDF](https://arxiv.org/pdf/2204.08499.pdf)
 
+## Introduction
 
-### Introduction
-To advance the research of coreset selection in deep learning, we contribute a code library named **DeepCore**, an extensive and extendable code library, for coreset selection in deep learning, reproducing dozens of popular and advanced coreset selection methods and enabling a fair comparison of different methods in the same experimental settings. **DeepCore** is highly modular, allowing to add new architectures, datasets, methods and learning scenarios easily. It is built on PyTorch.   
+To advance the research of coreset selection in deep learning, we contribute a code library named **DeepCore**, an extensive and extendable code library, for coreset selection in deep learning, reproducing dozens of popular and advanced coreset selection methods and enabling a fair comparison of different methods in the same experimental settings. **DeepCore** is highly modular, allowing to add new architectures, datasets, methods and learning scenarios easily. It is built on PyTorch.
 
-### Coreset Methods
+## Coreset Methods
+
 We list the methods in DeepCore according to the categories in our original paper, they are 1) geometry based methods Contextual Diversity (CD), Herding  and k-Center Greedy; 2) uncertainty scores; 3) error based methods Forgetting  and GraNd score ; 4) decision boundary based methods Cal  and DeepFool ; 5) gradient matching based methods Craig  and GradMatch ; 6) bilevel optimiza- tion methods Glister ; and 7) Submodularity based Methods (GC) and Facility Location (FL) functions. we also have Random selection as the baseline.
 
-### Datasets
+## Datasets
+
 It contains a series of other popular computer vision datasets, namely MNIST, QMNIST, FashionMNIST, SVHN, CIFAR10, CIFAR100 and TinyImageNet and ImageNet.
 
-### Models
+## Models
+
 They are two-layer fully connected MLP, LeNet , AlexNet, VGG, Inception-v3, ResNet, WideResNet and MobileNet-v3.
 
-### Example
+## Example
+
 Selecting with Glister and training on the coreset with fraction 0.1.
+
 ```sh
 CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Glister --model InceptionV3 --lr 0.1 -sp ./result --batch 128
 ```
 
 Resuming interuppted training with argument ```--resume```.
+
 ```sh
 CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Glister --model InceptionV3 --lr 0.1 -sp ./result --batch 128 --resume "CIFAR10_InceptionV3_Glister_exp0_epoch200_2022-02-05 21:31:53.762903_0.1_unknown.ckpt"
 ```
 
 Batch size can be seperatedly assigned for both selection and training.
+
 ```sh
 CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.5 --dataset ImageNet --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Cal --model MobileNetV3Large --lr 0.1 -sp ./result -tb 256 -sb 128
 ```
 
 Argument ```--uncertainty``` to choose uncertainty scores.
+
 ```sh
 CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Uncertainty --model ResNet18 --lr 0.1 -sp ./result --batch 128 --uncertainty Entropy
 ```
 
-
 Argument ```--submodular``` to choose submodular function, e.g. ```GraphCut```, ```FacilityLocation``` or ```LogDeterminant```. You may also specify the type of greedy algorithm to use when maximizing functions with argument ```--submodular_greedy```, for example ```NaiveGreedy```, ```LazyGreedy```, ```StochasticGreedy```, etc.
+
 ```sh
 CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Submodular --model ResNet18 --lr 0.1 -sp ./result --batch 128 --submodular GraphCut --submodular_greedy NaiveGreedy
 ```
 
-### Extend
+## Extend
 
 DeepCore is highly modular and scalable. It allows to add new architectures, datasets and selection methods easily, to help coreset methods to be evaluated in a richer set of scenarios, and also to facilitate new methods for comparison. Here is an example for datasets. To add a new dataset, you need implement a function whose input is the data path and outputs are number of channels, size of image, number of classes, names of classes, mean, std and training and testing dataset inherited from ```torch.utils.data.Dataset```.
-
 
 ```python
 from torchvision import datasets, transforms
@@ -61,7 +68,9 @@ def MNIST(data_path):
     class_names = [str(c) for c in range(num_classes)]
     return channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test
 ```
+
 This is an example for implementing network architecture.
+
 ```python
 import torch.nn as nn
 import torch.nn.functional as F
@@ -116,7 +125,7 @@ class CoresetMethod(object):
         return
 ```
 
-### References
+## References
 
 1. Agarwal, S., Arora, H., Anand, S., Arora, C.: Contextual diversity for active learning. In: ECCV. pp. 137–153. Springer (2020)
 2. Coleman, C., Yeh, C., Mussmann, S., Mirzasoleiman, B., Bailis, P., Liang, P., Leskovec, J., Zaharia, M.: Selection via proxy: Efficient data selection for deep learning. In: ICLR (2019)
@@ -131,4 +140,35 @@ class CoresetMethod(object):
 11. Toneva, M., Sordoni, A., des Combes, R.T., Trischler, A., Bengio, Y., Gordon, G.J.: An empirical study of example forgetting during deep neural network learning. In: ICLR (2018)
 12. Welling, M.: Herding dynamical weights to learn. In: Proceedings of the 26th Annual International Conference on Machine Learning. pp. 1121–1128 (2009)
 
+```mermaid
+sequenceDiagram
+    participant Main
+    participant EarlyTrain
+    participant Train
+    participant Test
 
+    Main->>EarlyTrain: select()
+    activate EarlyTrain
+    EarlyTrain->>EarlyTrain: before_run()
+    loop For each epoch
+        EarlyTrain->>EarlyTrain: before_epoch()
+        EarlyTrain->>Train: train(epoch, list_of_train_idx)
+        activate Train
+        Train->>Train: before_train()
+        loop For each batch
+            Train->>Train: forward pass
+            Train->>Train: compute loss
+            Train->>Train: after_loss()
+            Train->>Train: while_update()
+            Train->>Train: backward pass
+        end
+        Train->>Train: finish_train()
+        deactivate Train
+        alt If test interval reached
+            EarlyTrain->>Test: test(epoch)
+        end
+        EarlyTrain->>EarlyTrain: after_epoch()
+    end
+    EarlyTrain->>EarlyTrain: finish_run()
+    deactivate EarlyTrain
+```
