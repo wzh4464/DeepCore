@@ -3,13 +3,17 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Saturday, 24th August 2024 10:56:55 am
+ # Last Modified: Saturday, 24th August 2024 11:12:25 am
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
  # Date      		By   	Comments
  # ----------		------	---------------------------------------------------------
  # 2024-08-17        Zihan	Added epoch usage tracking and removed manual memory clearing
+ # 2024-08-24        Zihan	Added support for multiple GPUs and improved code readability
+ # -----
+ # --dataset MNIST --model LeNet --selection OTI --num_exp 1 --epochs 5 --selection_epochs 5 --data_path ./data --gpu 0 1 2 --optimizer SGD --lr 0.1 --scheduler CosineAnnealingLR --save_path ./results --num_gpus 3 --oti_mode full
+ # Prec@1 93.200000
 ###
 
 import os
@@ -101,11 +105,11 @@ class OTI(EarlyTrain):
     
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
         """
-        在损失计算后执行操作，包括生成和保存伪参数。
+        Perform operations after loss calculation, including generating and saving pseudo parameters.
         """
         super().after_loss(outputs, loss, targets, batch_inds, epoch)
 
-        # 为批次中的每个数据点生成伪更新参数（在 CPU 上）
+        # Generate pseudo update parameters for each data point in the batch (on CPU)
         with torch.no_grad():
             self.pseudo_params_list = []
             for data_idx in batch_inds:
@@ -126,7 +130,7 @@ class OTI(EarlyTrain):
             self.best_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
             self.save_best_params()
 
-        # 更新计数器
+        # Update counters
         self.total_params_processed += len(batch_inds)
         self.current_step += 1
         
@@ -160,23 +164,23 @@ class OTI(EarlyTrain):
             )
             print("[OTI] Saving model parameters...")
 
-        # 保存批次的初始参数（在 CPU 上）
+        # Save the initial parameters of the batch (on CPU)
         self.current_batch_initial_params = {name: param.clone().detach().cpu() for name, param in self.model.named_parameters()}
-        # 保存批次信息到磁盘
+        # Save batch information to disk
         self.save_batch_info(epoch, self.current_step, self.current_batch_initial_params, loss.item())
 
     def save_batch_info(self, epoch, batch_idx, initial_params, loss):
         batch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}", f"batch_{batch_idx}")
         os.makedirs(batch_dir, exist_ok=True)
 
-        # 保存初始参数
+        # Save initial parameters
         torch.save(initial_params, os.path.join(batch_dir, "initial_params.pt"))
 
-        # 保存伪参数列表
+        # Save the pseudo parameter list
         with open(os.path.join(batch_dir, "pseudo_params.pkl"), "wb") as f:
             pickle.dump(self.pseudo_params_list, f)
 
-        # 保存其他信息
+        # Save other information
         with open(os.path.join(batch_dir, "info.pkl"), "wb") as f:
             pickle.dump({"loss": loss}, f)
                 
@@ -192,7 +196,7 @@ class OTI(EarlyTrain):
                 "epoch_usage": self.epoch_losses[-1] < self.epoch_losses[-2] if len(self.epoch_losses) > 1 else True
             }, f)
 
-        print(f"[OTI] 参数和数据顺序已保存到 epoch {self.current_epoch}")
+        print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
         self.current_epoch_parameters = []
         self.current_step = 0
         self.current_epoch += 1
