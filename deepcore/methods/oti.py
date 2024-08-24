@@ -3,7 +3,7 @@
  # Created Date: Friday, August 9th 2024
  # Author: Zihan
  # -----
- # Last Modified: Friday, 23rd August 2024 11:34:56 am
+ # Last Modified: Saturday, 24th August 2024 10:56:55 am
  # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
  # -----
  # HISTORY:
@@ -37,7 +37,6 @@ class OTI(EarlyTrain):
         random_seed=None,
         epochs=200,
         specific_model=None,
-        num_gpus=3,
         mode='scores', # [full, stored, scores]
         fractions=[0.8, 0.5, 0.3],  # New parameter for subset fractions
         **kwargs,
@@ -70,9 +69,10 @@ class OTI(EarlyTrain):
         self.epoch_losses = []  # Track losses for each epoch
         self.epoch_usage = []  # Track whether each epoch was actually used
         self.initial_params = None  # To store initial parameters
-        self.num_gpus = num_gpus
-        self.mode = mode
+        self.num_gpus = args.num_gpus if hasattr(args, 'num_gpus') else 1
+        self.mode = args.oti_mode if hasattr(args, 'oti_mode') else mode
         self.fractions = fractions
+        self.pseudo_params_list = []  # To store pseudo parameters for each data point
 
     def before_run(self):
         """
@@ -98,11 +98,52 @@ class OTI(EarlyTrain):
             list_of_train_idx.copy()
         )  # Store the data order for this epoch
         return super().train(epoch, list_of_train_idx)
+    
+    def after_loss(self, outputs, loss, targets, batch_inds, epoch):
+        """
+        在损失计算后执行操作，包括生成和保存伪参数。
+        """
+        super().after_loss(outputs, loss, targets, batch_inds, epoch)
 
+        # 为批次中的每个数据点生成伪更新参数（在 CPU 上）
+        with torch.no_grad():
+            self.pseudo_params_list = []
+            for data_idx in batch_inds:
+                pseudo_params = {
+                    name: (param - self.args.selection_lr * param.grad).cpu()
+                    for name, param in self.model.named_parameters()
+                    if param.grad is not None
+                }
+                self.pseudo_params_list.append({
+                    "data_idx": data_idx,
+                    "params": pseudo_params
+                })
+
+        # Check if this is the best loss so far
+        current_loss = loss.mean().item()
+        if current_loss < self.best_loss:
+            self.best_loss = current_loss
+            self.best_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
+            self.save_best_params()
+
+        # 更新计数器
+        self.total_params_processed += len(batch_inds)
+        self.current_step += 1
+        
+    def save_best_params(self):
+        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
+        with open(best_params_path, "wb") as f:
+            pickle.dump(self.best_params, f)
+        print(f"[OTI] Best parameters saved to {best_params_path}")
+        
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
         Perform actions during the update step, including saving model parameters
-        and calculating incremental scores.
+        and calculating pseudo parameters for each data point.
+        
+        Save:
+            - Initial parameters (`initial_params.pt`)
+            - Pseudo parameters for each data point (`pseudo_params.pkl`)
 
         Args:
             outputs: Model outputs.
@@ -119,34 +160,28 @@ class OTI(EarlyTrain):
             )
             print("[OTI] Saving model parameters...")
 
-        # Store parameters on CPU
-        current_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
+        # 保存批次的初始参数（在 CPU 上）
+        self.current_batch_initial_params = {name: param.clone().detach().cpu() for name, param in self.model.named_parameters()}
+        # 保存批次信息到磁盘
+        self.save_batch_info(epoch, self.current_step, self.current_batch_initial_params, loss.item())
 
-        # Update best parameters if current loss is lower
-        if loss.item() < self.best_loss:
-            self.best_loss = loss.item()
-            self.best_params = current_params
+    def save_batch_info(self, epoch, batch_idx, initial_params, loss):
+        batch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}", f"batch_{batch_idx}")
+        os.makedirs(batch_dir, exist_ok=True)
 
-        self.current_epoch_parameters.append({
-            "step": self.current_step,
-            "data_idx": self.epoch_data_orders[epoch][batch_idx],
-            "params": current_params,
-            "loss": loss.item()  # Store the loss separately
-        })
+        # 保存初始参数
+        torch.save(initial_params, os.path.join(batch_dir, "initial_params.pt"))
 
-        self.total_params_processed += 1
-        self.current_step += 1
+        # 保存伪参数列表
+        with open(os.path.join(batch_dir, "pseudo_params.pkl"), "wb") as f:
+            pickle.dump(self.pseudo_params_list, f)
 
+        # 保存其他信息
+        with open(os.path.join(batch_dir, "info.pkl"), "wb") as f:
+            pickle.dump({"loss": loss}, f)
+                
     def after_epoch(self):
         super().after_epoch()
-
-        # Get the loss of the last parameter update in this epoch
-        latest_loss = self.current_epoch_parameters[-1]['loss']
-        self.epoch_losses.append(latest_loss)
-
-        # Determine if this epoch was actually used (loss decreased)
-        epoch_used = True if len(self.epoch_losses) == 1 else self.epoch_losses[-1] < self.epoch_losses[-2]
-        self.epoch_usage.append(epoch_used)
 
         file_path = os.path.join(self.args.save_path, f"epoch_{self.current_epoch}_data.pkl")
 
@@ -154,20 +189,13 @@ class OTI(EarlyTrain):
             pickle.dump({
                 "parameters": self.current_epoch_parameters,
                 "data_order": self.epoch_data_orders[self.current_epoch],
-                "latest_loss": latest_loss,
-                "epoch_used": epoch_used
+                "epoch_usage": self.epoch_losses[-1] < self.epoch_losses[-2] if len(self.epoch_losses) > 1 else True
             }, f)
 
-        print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
-        print(f"[OTI] Epoch {self.current_epoch} latest loss: {latest_loss:.4f}")
-        print(f"[OTI] Epoch {self.current_epoch} used: {epoch_used}")
-
-        # Reset step counter and increment epoch counter
+        print(f"[OTI] 参数和数据顺序已保存到 epoch {self.current_epoch}")
+        self.current_epoch_parameters = []
         self.current_step = 0
         self.current_epoch += 1
-        self.current_epoch_parameters = []  # Clear the list for the next epoch
-
-        # Note: We no longer manually clear self.current_epoch_parameters
 
     def get_params(self, epoch, step):
         """
@@ -260,47 +288,93 @@ class OTI(EarlyTrain):
         """Calculate L2 distance between two parameter sets"""
         return sum(torch.norm(params1[name].to(device) - params2[name].to(device)).item() for name in params1 if name in params2)
 
-    def gpu_worker(self, gpu_id, epochs, return_dict):
-        """Worker function for GPU-based score calculation"""
+    def gpu_worker(self, gpu_id, epochs, return_dict, best_params):
+        torch.cuda.set_device(gpu_id)
         device = torch.device(f"cuda:{gpu_id}")
-        best_params = {k: v.to(device) for k, v in self.load_best_params().items()}
-        initial_params = {k: v.to(device) for k, v in self.initial_params.items()}
 
         local_scores = {}
 
         for epoch in epochs:
-            epoch_data = self._load_epoch_data(epoch)
-            parameters = epoch_data["parameters"]
-            data_order = epoch_data["data_order"]
+            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
+            batch_dirs = sorted([d for d in os.listdir(epoch_dir) if d.startswith("batch_")])
 
-            for i in tqdm(range(len(parameters)), desc=f"GPU {gpu_id} - Epoch {epoch}", position=gpu_id):
-                data_idx = data_order[i]
+            for batch_dir in tqdm(batch_dirs, desc=f"GPU {gpu_id} processing epoch {epoch}"):
+                batch_path = os.path.join(epoch_dir, batch_dir)
+                
+                initial_params = torch.load(os.path.join(batch_path, "initial_params.pt"), map_location=device)
+                initial_distance = self.calculate_l2_distance(initial_params, best_params, device)
 
-                if i == 0 and epoch == min(epochs):
-                    prev_params = initial_params
-                elif i == 0:
-                    prev_params = {k: v.to(device) for k, v in self._load_epoch_data(epoch-1)["parameters"][-1]["params"].items()}
-                else:
-                    prev_params = {k: v.to(device) for k, v in parameters[i-1]["params"].items()}
+                with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
+                    pseudo_params_list = pickle.load(f)
 
-                current_params = {k: v.to(device) for k, v in parameters[i]["params"].items()}
+                for pseudo_param in pseudo_params_list:
+                    data_idx = pseudo_param["data_idx"]
+                    pseudo_params = {k: v.to(device) for k, v in pseudo_param["params"].items()}
+                    pseudo_distance = self.calculate_l2_distance(pseudo_params, best_params, device)
 
-                prev_distance = self.calculate_l2_distance(prev_params, best_params, device)
-                current_distance = self.calculate_l2_distance(current_params, best_params, device)
+                    score = initial_distance - pseudo_distance
 
-                score = prev_distance - current_distance
+                    if data_idx not in local_scores:
+                        local_scores[data_idx] = score
+                    else:
+                        local_scores[data_idx] += score
 
-                if data_idx not in local_scores:
-                    local_scores[data_idx] = score
-                else:
-                    local_scores[data_idx] += score
-
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
 
         return_dict[gpu_id] = local_scores
 
     def calculate_scores(self):
+        """Calculate scores using single or multiple GPUs"""
+        try:
+            best_params = self.load_best_params()
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            print("[OTI] Using the current model parameters as the best parameters.")
+            best_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
+        if self.num_gpus <= 1:
+            return self.single_gpu_calculate_scores(best_params)
+        else:
+            return self.multi_gpu_calculate_scores(best_params)
+
+    def single_gpu_calculate_scores(self, best_params):
+        """Calculate scores using a single GPU"""
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        total_scores = {}
+
+        for epoch in range(self.epochs):
+            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
+            batch_dirs = sorted([d for d in os.listdir(epoch_dir) if d.startswith("batch_")])
+
+            for batch_dir in tqdm(batch_dirs, desc=f"Processing epoch {epoch}"):
+                batch_path = os.path.join(epoch_dir, batch_dir)
+                
+                initial_params = torch.load(os.path.join(batch_path, "initial_params.pt"), map_location=device)
+                initial_distance = self.calculate_l2_distance(initial_params, best_params, device)
+
+                with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
+                    pseudo_params_list = pickle.load(f)
+
+                for pseudo_param in pseudo_params_list:
+                    data_idx = pseudo_param["data_idx"]
+                    pseudo_params = {k: v.to(device) for k, v in pseudo_param["params"].items()}
+                    pseudo_distance = self.calculate_l2_distance(pseudo_params, best_params, device)
+
+                    score = initial_distance - pseudo_distance
+
+                    if data_idx not in total_scores:
+                        total_scores[data_idx] = score
+                    else:
+                        total_scores[data_idx] += score
+
+                torch.cuda.empty_cache()
+
+        return total_scores
+
+    def multi_gpu_calculate_scores(self, best_params):
         """Calculate scores using multiple GPUs"""
+        mp.set_start_method('spawn', force=True)
+        
         manager = mp.Manager()
         return_dict = manager.dict()
 
@@ -308,7 +382,7 @@ class OTI(EarlyTrain):
 
         processes = []
         for gpu_id in range(self.num_gpus):
-            p = mp.Process(target=self.gpu_worker, args=(gpu_id, epochs_per_gpu[gpu_id], return_dict))
+            p = mp.Process(target=self.gpu_worker, args=(gpu_id, epochs_per_gpu[gpu_id], return_dict, best_params))
             processes.append(p)
             p.start()
 
@@ -368,31 +442,30 @@ class OTI(EarlyTrain):
         This method saves the best parameters to a separate file and keeps all the intermediate
         epoch data files for further analysis or debugging purposes.
         """
-        # Save the best parameters
-        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
-        with open(best_params_path, "wb") as f:
-            pickle.dump(self.best_params, f)
-        print(f"[OTI] Best parameters saved to {best_params_path}")
-
-        # Log the preservation of intermediate results
-        print("[OTI] Preserving all intermediate epoch data files for further analysis.")
-        
-        # List all preserved files and their usage status
-        preserved_files = [f for f in os.listdir(self.args.save_path) if f.startswith("epoch_") and f.endswith("_data.pkl")]
-        print(f"[OTI] Preserved {len(preserved_files)} epoch data files:")
-        for i, file in enumerate(preserved_files):
-            print(f"  - {file} (Used: {self.epoch_usage[i]})")
-
-        print("[OTI] Run finished. All intermediate results have been preserved.")
+        if self.best_params is None:
+            print("[OTI] Warning: No best parameters were saved during the run.")
+            self.best_params = {name: param.cpu().clone().detach() for name, param in self.model.state_dict().items()}
+            self.save_best_params()
+            print("[OTI] Run finished. All intermediate results have been preserved.")
+        else:
+            
+            print("[OTI] Best parameters were successfully saved during the run.")
 
     def load_best_params(self):
+        """
+        Load the best parameters from a file.
+
+        Returns:
+            dict: The best parameters loaded from the file.
+
+        Raises:
+            FileNotFoundError: If the best parameters file is not found.
+        """
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
-        if os.path.exists(best_params_path):
-            with open(best_params_path, "rb") as f:
-                return pickle.load(f)
-        else:
-            print("[OTI] Best parameters file not found.")
-            return None
+        if not os.path.exists(best_params_path):
+            raise FileNotFoundError(f"[OTI] Best parameters file not found at {best_params_path}")
+        with open(best_params_path, "rb") as f:
+            return pickle.load(f)
 
 # Add OTI to SELECTION_METHODS
 SELECTION_METHODS["OTI"] = OTI
