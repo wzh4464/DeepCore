@@ -374,9 +374,8 @@ class InceptionV3_224x224(inception.Inception3):
             x = self.Mixed_6e(x)
             # N x 768 x 17 x 17
             aux = None
-            if self.AuxLogits is not None:
-                if self.training:
-                    aux = self.AuxLogits(x)
+            if self.AuxLogits is not None and self.training:
+                aux = self.AuxLogits(x)
             # N x 768 x 17 x 17
             x = self.Mixed_7a(x)
             # N x 1280 x 8 x 8

@@ -119,10 +119,7 @@ class InvertedResidual(nn.Module):
             )
 
     def forward(self, x):
-        if self.identity:
-            return x + self.conv(x)
-        else:
-            return self.conv(x)
+        return x + self.conv(x) if self.identity else self.conv(x)
 
 
 class MobileNetV3_32x32(nn.Module):

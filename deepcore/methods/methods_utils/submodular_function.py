@@ -2,7 +2,9 @@ import numpy as np
 
 
 class SubmodularFunction(object):
-    def __init__(self, index, similarity_kernel=None, similarity_matrix=None, already_selected=[]):
+    def __init__(self, index, similarity_kernel=None, similarity_matrix=None, already_selected=None):
+        if already_selected is None:
+            already_selected = []
         self.index = index
         self.n = len(index)
 
@@ -54,12 +56,15 @@ class FacilityLocation(SubmodularFunction):
         return _func
 
     def calc_gain(self, idx_gain, selected, **kwargs):
-        gains = np.maximum(0., self.similarity_kernel(self.all_idx, idx_gain) - self.cur_max.reshape(-1, 1)).sum(axis=0)
-        return gains
+        return np.maximum(
+            0.0,
+            self.similarity_kernel(self.all_idx, idx_gain)
+            - self.cur_max.reshape(-1, 1),
+        ).sum(axis=0)
 
     def calc_gain_batch(self, idx_gain, selected, **kwargs):
         batch_idx = ~self.all_idx
-        batch_idx[0:kwargs["batch"]] = True
+        batch_idx[:kwargs["batch"]] = True
         gains = np.maximum(0., self.similarity_kernel(batch_idx, idx_gain) - self.cur_max[batch_idx].reshape(-1, 1)).sum(axis=0)
         for i in range(kwargs["batch"], self.n, kwargs["batch"]):
             batch_idx = ~self.all_idx
@@ -102,9 +107,10 @@ class GraphCut(SubmodularFunction):
 
     def calc_gain(self, idx_gain, selected, **kwargs):
 
-        gain = -2. * np.sum(self.similarity_kernel(selected, idx_gain), axis=0) + self.lam * self.sim_matrix_cols_sum[idx_gain]
-
-        return gain
+        return (
+            -2.0 * np.sum(self.similarity_kernel(selected, idx_gain), axis=0)
+            + self.lam * self.sim_matrix_cols_sum[idx_gain]
+        )
 
     def update_state(self, new_selection, total_selected, **kwargs):
         pass

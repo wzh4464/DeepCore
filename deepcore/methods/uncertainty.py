@@ -85,5 +85,4 @@ class Uncertainty(EarlyTrain):
         return scores
 
     def select(self, **kwargs):
-        selection_result = self.run()
-        return selection_result
+        return self.run()

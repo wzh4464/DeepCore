@@ -72,9 +72,8 @@ class kCenterGreedy(EarlyTrain):
         super().__init__(dst_train, args, fraction, random_seed, epochs=epochs, specific_model=specific_model,
                          torchvision_pretrain=torchvision_pretrain, **kwargs)
 
-        if already_selected.__len__() != 0:
-            if min(already_selected) < 0 or max(already_selected) >= self.n_train:
-                raise ValueError("List of already selected points out of the boundary.")
+        if already_selected.__len__() != 0 and (min(already_selected) < 0 or max(already_selected) >= self.n_train):
+            raise ValueError("List of already selected points out of the boundary.")
         self.already_selected = np.array(already_selected)
 
         self.min_distances = None
@@ -139,7 +138,7 @@ class kCenterGreedy(EarlyTrain):
                                     batch_size=self.args.selection_batch,
                                     num_workers=self.args.workers)
 
-                for i, (inputs, _) in enumerate(data_loader):
+                for inputs, _ in data_loader:
                     self.model(inputs.to(self.args.device))
                     matrix.append(self.model.embedding_recorder.embedding)
 

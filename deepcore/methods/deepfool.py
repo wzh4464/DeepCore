@@ -69,14 +69,17 @@ class DeepFool(EarlyTrain):
         first_preds = self.model(cur_inputs).argmax(dim=1)
         self.model.no_grad = False
 
-        for i in range(self.max_iter):
+        for _ in range(self.max_iter):
             f_all = self.model(cur_inputs)
 
-            w_k = []
-            for c in range(self.args.num_classes):
-                w_k.append(torch.autograd.grad(f_all[:, c].sum(), cur_inputs,
-                                               retain_graph=False if c + 1 == self.args.num_classes else True)[
-                               0].flatten(1))
+            w_k = [
+                torch.autograd.grad(
+                    f_all[:, c].sum(),
+                    cur_inputs,
+                    retain_graph=c + 1 != self.args.num_classes,
+                )[0].flatten(1)
+                for c in range(self.args.num_classes)
+            ]
             w_k = torch.stack(w_k, dim=0)
             w_k = w_k - w_k[first_preds, boolean_mask[boolean_mask]].unsqueeze(0)
             w_k_norm = w_k.norm(dim=2)
@@ -87,8 +90,6 @@ class DeepFool(EarlyTrain):
             l_all = (f_all - f_all[boolean_mask[boolean_mask], first_preds].unsqueeze(1)).detach().abs() / w_k_norm.T
             l_all[boolean_mask[
                       boolean_mask], first_preds] = np.inf  # Set l_k for preds positions to inf, as the argmin for each
-                                                            # row will be calculated soon.
-
             l_hat = l_all.argmin(dim=1)
             r_i = l_all[boolean_mask[boolean_mask], l_hat].unsqueeze(1) / w_k_norm[
                 l_hat, boolean_mask[boolean_mask]].T.unsqueeze(1) * w_k[l_hat, boolean_mask[boolean_mask]]
@@ -116,5 +117,4 @@ class DeepFool(EarlyTrain):
         return (r_tot * r_tot).sum(axis=1)
 
     def select(self, **kwargs):
-        selection_result = self.run()
-        return selection_result
+        return self.run()

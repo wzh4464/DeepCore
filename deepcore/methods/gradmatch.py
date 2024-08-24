@@ -208,6 +208,5 @@ class GradMatch(EarlyTrain):
         return {"indices": selection_result, "weights": weights}
 
     def select(self, **kwargs):
-        selection_result = self.run()
-        return selection_result
+        return self.run()
 
