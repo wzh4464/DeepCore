@@ -58,6 +58,19 @@ class EarlyTrain(CoresetMethod):
         """
         Initialize the EarlyTrain instance.
 
+        define: 
+        - self.epochs (int): Number of epochs to train. e.g. 5
+        - self.n_train (int): Number of samples in the training dataset. e.g. 60000
+        - self.coreset_size (int): Size of the coreset to be selected. e.g. 6000
+        - self.specific_model (str): Name of a specific model to use, if any. e.g. None
+        - self.fraction_pretrain (float): Fraction of the dataset to use for pretraining. e.g. 1.0
+        - self.dst_pretrain_dict (dict): Dictionary containing pretraining dataset information. e.g. {}
+        - self.torchvision_pretrain (bool): Whether to use pretrained models from torchvision. e.g. False
+        - self.if_dst_pretrain (bool): Whether a separate pretraining dataset is provided. e.g. False
+        - self.n_pretrain (int): Number of samples in the pretraining dataset. e.g. 60000
+        - self.n_pretrain_size (int): Number of samples to use for pretraining. e.g. 60000
+        - self.dst_test (Dataset): Test dataset, if provided. e.g. None
+        
         Sets up the training environment, including dataset preparation, model selection,
         and optimization settings.
         """
