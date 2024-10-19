@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 20th October 2024 2:01:49 am
+# Last Modified: Sunday, 20th October 2024 2:25:26 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -44,6 +44,9 @@ class OTI(EarlyTrain):
         specific_model=None,
         mode="scores",
         fractions=None,
+        use_regularization=False,  # 新选项：是否使用正则化
+        use_learning_rate=True,  # 新选项：是否使用学习率
+        use_sliding_window=False,  # 新选项：是否使用滑动窗口（暂未实现）
         **kwargs,
     ):
         """
@@ -81,6 +84,9 @@ class OTI(EarlyTrain):
         self.fractions = fractions
         self.pseudo_params_list = []  # To store pseudo parameters for each data point
         self.lr_history = {}  # To store learning rates for each epoch
+        self.use_regularization = use_regularization
+        self.use_learning_rate = use_learning_rate
+        self.use_sliding_window = use_sliding_window
 
     def before_run(self):
         """
@@ -347,15 +353,57 @@ class OTI(EarlyTrain):
         with open(file_path, "rb") as f:
             return pickle.load(f)
 
-    def calculate_l2_distance(self, params1, params2, device):
-        """Calculate L2 distance between two parameter sets"""
-        return sum(
-            torch.norm(params1[name].to(device) - params2[name].to(device)).item()
-            for name in params1
-            if name in params2
-        )
+    def calculate_scores(
+        self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
+    ):
+        """Calculate scores using single or multiple GPUs"""
+        try:
+            best_params = self.load_best_params()
+        except FileNotFoundError as e:
+            print(f"Error: {e}")
+            print("[OTI] Using the current model parameters as the best parameters.")
+            best_params = {
+                name: param.cpu().clone().detach()
+                for name, param in self.model.state_dict().items()
+            }
 
-    def gpu_worker(self, gpu_id, epochs, return_dict, best_params):
+        if self.num_gpus <= 1:
+            return self.single_gpu_calculate_scores(
+                best_params, use_regularization, use_learning_rate, use_sliding_window
+            )
+        else:
+            return self.multi_gpu_calculate_scores(
+                best_params, use_regularization, use_learning_rate, use_sliding_window
+            )
+
+    def calculate_l2_distance(self, params1, params2, device, use_regularization):
+        """Calculate L2 distance between two parameter sets"""
+        if use_regularization:
+            return sum(
+                (
+                    torch.norm(params1[name].to(device) - params2[name].to(device))
+                    / torch.norm(params1[name].to(device))
+                ).item()
+                for name in params1
+                if name in params2
+            )
+        else:
+            return sum(
+                torch.norm(params1[name].to(device) - params2[name].to(device)).item()
+                for name in params1
+                if name in params2
+            )
+
+    def gpu_worker(
+        self,
+        gpu_id,
+        epochs,
+        return_dict,
+        best_params,
+        use_regularization,
+        use_learning_rate,
+        use_sliding_window,
+    ):
         torch.cuda.set_device(gpu_id)
         device = torch.device(f"cuda:{gpu_id}")
 
@@ -367,6 +415,8 @@ class OTI(EarlyTrain):
                 [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
             )
 
+            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
+
             for batch_dir in tqdm(
                 batch_dirs, desc=f"GPU {gpu_id} processing epoch {epoch}"
             ):
@@ -376,7 +426,7 @@ class OTI(EarlyTrain):
                     os.path.join(batch_path, "initial_params.pt"), map_location=device
                 )
                 initial_distance = self.calculate_l2_distance(
-                    initial_params, best_params, device
+                    initial_params, best_params, device, use_regularization
                 )
 
                 with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
@@ -388,10 +438,12 @@ class OTI(EarlyTrain):
                         k: v.to(device) for k, v in pseudo_param["params"].items()
                     }
                     pseudo_distance = self.calculate_l2_distance(
-                        pseudo_params, best_params, device
+                        pseudo_params, best_params, device, use_regularization
                     )
 
                     score = initial_distance - pseudo_distance
+                    if use_learning_rate:
+                        score *= epoch_lr
 
                     if data_idx not in local_scores:
                         local_scores[data_idx] = score
@@ -402,23 +454,9 @@ class OTI(EarlyTrain):
 
         return_dict[gpu_id] = local_scores
 
-    def calculate_scores(self):
-        """Calculate scores using single or multiple GPUs"""
-        try:
-            best_params = self.load_best_params()
-        except FileNotFoundError as e:
-            print(f"Error: {e}")
-            print("[OTI] Using the current model parameters as the best parameters.")
-            best_params = {
-                name: param.cpu().clone().detach()
-                for name, param in self.model.state_dict().items()
-            }
-        if self.num_gpus <= 1:
-            return self.single_gpu_calculate_scores(best_params)
-        else:
-            return self.multi_gpu_calculate_scores(best_params)
-
-    def single_gpu_calculate_scores(self, best_params):
+    def single_gpu_calculate_scores(
+        self, best_params, use_regularization, use_learning_rate, use_sliding_window
+    ):
         """Calculate scores using a single GPU"""
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -430,6 +468,8 @@ class OTI(EarlyTrain):
                 [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
             )
 
+            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
+
             for batch_dir in tqdm(batch_dirs, desc=f"Processing epoch {epoch}"):
                 batch_path = os.path.join(epoch_dir, batch_dir)
 
@@ -437,7 +477,7 @@ class OTI(EarlyTrain):
                     os.path.join(batch_path, "initial_params.pt"), map_location=device
                 )
                 initial_distance = self.calculate_l2_distance(
-                    initial_params, best_params, device
+                    initial_params, best_params, device, use_regularization
                 )
 
                 with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
@@ -449,10 +489,12 @@ class OTI(EarlyTrain):
                         k: v.to(device) for k, v in pseudo_param["params"].items()
                     }
                     pseudo_distance = self.calculate_l2_distance(
-                        pseudo_params, best_params, device
+                        pseudo_params, best_params, device, use_regularization
                     )
 
                     score = initial_distance - pseudo_distance
+                    if use_learning_rate:
+                        score *= epoch_lr
 
                     if data_idx not in total_scores:
                         total_scores[data_idx] = score
@@ -461,9 +503,14 @@ class OTI(EarlyTrain):
 
                 torch.cuda.empty_cache()
 
+        if use_sliding_window:
+            print("[OTI] Warning: Sliding window not yet implemented.")
+
         return total_scores
 
-    def multi_gpu_calculate_scores(self, best_params):
+    def multi_gpu_calculate_scores(
+        self, best_params, use_regularization, use_learning_rate, use_sliding_window
+    ):
         """Calculate scores using multiple GPUs"""
         mp.set_start_method("spawn", force=True)
 
@@ -478,7 +525,15 @@ class OTI(EarlyTrain):
         for gpu_id in range(self.num_gpus):
             p = mp.Process(
                 target=self.gpu_worker,
-                args=(gpu_id, epochs_per_gpu[gpu_id], return_dict, best_params),
+                args=(
+                    gpu_id,
+                    epochs_per_gpu[gpu_id],
+                    return_dict,
+                    best_params,
+                    use_regularization,
+                    use_learning_rate,
+                    use_sliding_window,
+                ),
             )
             processes.append(p)
             p.start()
@@ -494,6 +549,11 @@ class OTI(EarlyTrain):
                 else:
                     total_scores[idx] += score
 
+        if use_sliding_window:
+            print(
+                "[OTI] Warning: Sliding window not yet implemented for multi-GPU calculation."
+            )
+
         return total_scores
 
     def load_scores(self):
@@ -504,7 +564,22 @@ class OTI(EarlyTrain):
         with open(scores_path, "rb") as f:
             return pickle.load(f)
 
-    def select(self, **kwargs):
+    def get_epoch_lr(self, epoch):
+        """Retrieve the learning rate for a specific epoch"""
+        epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
+        if os.path.exists(epoch_file):
+            with open(epoch_file, "rb") as f:
+                epoch_data = pickle.load(f)
+                return epoch_data.get("learning_rate", 1.0)
+        return 1.0
+
+    def select(
+        self,
+        use_regularization=False,
+        use_learning_rate=True,
+        use_sliding_window=False,
+        **kwargs,
+    ):
         """
         Select the subset based on calculated scores.
 
@@ -514,9 +589,13 @@ class OTI(EarlyTrain):
 
         if self.mode == "full":
             self.run()  # Run the training process
-            scores = self.calculate_scores()
+            scores = self.calculate_scores(
+                use_regularization, use_learning_rate, use_sliding_window
+            )
         elif self.mode == "stored":
-            scores = self.calculate_scores()  # Use stored epoch data
+            scores = self.calculate_scores(
+                use_regularization, use_learning_rate, use_sliding_window
+            )  # Use stored epoch data
         elif self.mode == "scores":
             scores = self.load_scores()  # Load pre-computed scores
         else:

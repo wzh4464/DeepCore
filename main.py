@@ -12,90 +12,271 @@ from datetime import datetime
 from time import sleep
 from typing import Type
 
+
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Parameter Processing')
+    parser = argparse.ArgumentParser(description="Parameter Processing")
 
     # Basic arguments
-    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
-    parser.add_argument('--model', type=str, default='ResNet18', help='model')
-    parser.add_argument('--selection', type=str, default="uniform", help="selection method")
-    parser.add_argument('--num_exp', type=int, default=5, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
-    parser.add_argument('--epochs', default=200, type=int, help='number of total epochs to run')
-    parser.add_argument('--data_path', type=str, default='data', help='dataset path')
-    parser.add_argument('--gpu', default=None, nargs="+", type=int, help='GPU id to use')
-    parser.add_argument('--print_freq', '-p', default=20, type=int, help='print frequency (default: 20)')
-    parser.add_argument('--fraction', default=0.1, type=float, help='fraction of data to be selected (default: 0.1)')
-    parser.add_argument('--seed', default=int(time.time() * 1000) % 100000, type=int, help="random seed")
-    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                        help='number of data loading workers (default: 4)')
-    parser.add_argument("--cross", type=str, nargs="+", default=None, help="models for cross-architecture experiments")
+    parser.add_argument("--dataset", type=str, default="CIFAR10", help="dataset")
+    parser.add_argument("--model", type=str, default="ResNet18", help="model")
+    parser.add_argument(
+        "--selection", type=str, default="uniform", help="selection method"
+    )
+    parser.add_argument(
+        "--num_exp", type=int, default=5, help="the number of experiments"
+    )
+    parser.add_argument(
+        "--num_eval",
+        type=int,
+        default=10,
+        help="the number of evaluating randomly initialized models",
+    )
+    parser.add_argument(
+        "--epochs", default=200, type=int, help="number of total epochs to run"
+    )
+    parser.add_argument("--data_path", type=str, default="data", help="dataset path")
+    parser.add_argument(
+        "--gpu", default=None, nargs="+", type=int, help="GPU id to use"
+    )
+    parser.add_argument(
+        "--print_freq", "-p", default=20, type=int, help="print frequency (default: 20)"
+    )
+    parser.add_argument(
+        "--fraction",
+        default=0.1,
+        type=float,
+        help="fraction of data to be selected (default: 0.1)",
+    )
+    parser.add_argument(
+        "--seed", default=int(time.time() * 1000) % 100000, type=int, help="random seed"
+    )
+    parser.add_argument(
+        "-j",
+        "--workers",
+        default=4,
+        type=int,
+        metavar="N",
+        help="number of data loading workers (default: 4)",
+    )
+    parser.add_argument(
+        "--cross",
+        type=str,
+        nargs="+",
+        default=None,
+        help="models for cross-architecture experiments",
+    )
 
     # Optimizer and scheduler
-    parser.add_argument('--optimizer', default="SGD", help='optimizer to use, e.g. SGD, Adam')
-    parser.add_argument('--lr', type=float, default=0.1, help='learning rate for updating network parameters')
-    parser.add_argument('--min_lr', type=float, default=1e-4, help='minimum learning rate')
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                        help='momentum (default: 0.9)')
-    parser.add_argument('-wd', '--weight_decay', default=5e-4, type=float,
-                        metavar='W', help='weight decay (default: 5e-4)',
-                        dest='weight_decay')
-    parser.add_argument("--nesterov", default=True, type=str_to_bool, help="if set nesterov")
-    parser.add_argument("--scheduler", default="CosineAnnealingLR", type=str, help=
-    "Learning rate scheduler")
-    parser.add_argument("--gamma", type=float, default=.5, help="Gamma value for StepLR")
-    parser.add_argument("--step_size", type=float, default=50, help="Step size for StepLR")
+    parser.add_argument(
+        "--optimizer", default="SGD", help="optimizer to use, e.g. SGD, Adam"
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.1,
+        help="learning rate for updating network parameters",
+    )
+    parser.add_argument(
+        "--min_lr", type=float, default=1e-4, help="minimum learning rate"
+    )
+    parser.add_argument(
+        "--momentum",
+        default=0.9,
+        type=float,
+        metavar="M",
+        help="momentum (default: 0.9)",
+    )
+    parser.add_argument(
+        "-wd",
+        "--weight_decay",
+        default=5e-4,
+        type=float,
+        metavar="W",
+        help="weight decay (default: 5e-4)",
+        dest="weight_decay",
+    )
+    parser.add_argument(
+        "--nesterov", default=True, type=str_to_bool, help="if set nesterov"
+    )
+    parser.add_argument(
+        "--scheduler",
+        default="CosineAnnealingLR",
+        type=str,
+        help="Learning rate scheduler",
+    )
+    parser.add_argument(
+        "--gamma", type=float, default=0.5, help="Gamma value for StepLR"
+    )
+    parser.add_argument(
+        "--step_size", type=float, default=50, help="Step size for StepLR"
+    )
 
     # Training
-    parser.add_argument('--batch', '--batch-size', "-b", default=256, type=int, metavar='N',
-                        help='mini-batch size (default: 256)')
-    parser.add_argument("--train_batch", "-tb", default=None, type=int,
-                        help="batch size for training, if not specified, it will equal to batch size in argument --batch")
-    parser.add_argument("--selection_batch", "-sb", default=None, type=int,
-                        help="batch size for selection, if not specified, it will equal to batch size in argument --batch")
+    parser.add_argument(
+        "--batch",
+        "--batch-size",
+        "-b",
+        default=256,
+        type=int,
+        metavar="N",
+        help="mini-batch size (default: 256)",
+    )
+    parser.add_argument(
+        "--train_batch",
+        "-tb",
+        default=None,
+        type=int,
+        help="batch size for training, if not specified, it will equal to batch size in argument --batch",
+    )
+    parser.add_argument(
+        "--selection_batch",
+        "-sb",
+        default=None,
+        type=int,
+        help="batch size for selection, if not specified, it will equal to batch size in argument --batch",
+    )
 
     # Testing
-    parser.add_argument("--test_interval", '-ti', default=1, type=int, help=
-    "the number of training epochs to be performed between two test epochs; a value of 0 means no test will be run (default: 1)")
-    parser.add_argument("--test_fraction", '-tf', type=float, default=1.,
-                        help="proportion of test dataset used for evaluating the model (default: 1.)")
+    parser.add_argument(
+        "--test_interval",
+        "-ti",
+        default=1,
+        type=int,
+        help="the number of training epochs to be performed between two test epochs; a value of 0 means no test will be run (default: 1)",
+    )
+    parser.add_argument(
+        "--test_fraction",
+        "-tf",
+        type=float,
+        default=1.0,
+        help="proportion of test dataset used for evaluating the model (default: 1.)",
+    )
 
     # Selecting
-    parser.add_argument("--selection_epochs", "-se", default=40, type=int,
-                        help="number of epochs while performing selection on full dataset")
-    parser.add_argument('--selection_momentum', '-sm', default=0.9, type=float, metavar='M',
-                        help='momentum while performing selection (default: 0.9)')
-    parser.add_argument('--selection_weight_decay', '-swd', default=5e-4, type=float,
-                        metavar='W', help='weight decay while performing selection (default: 5e-4)',
-                        dest='selection_weight_decay')
-    parser.add_argument('--selection_optimizer', "-so", default="SGD",
-                        help='optimizer to use while performing selection, e.g. SGD, Adam')
-    parser.add_argument("--selection_nesterov", "-sn", default=True, type=str_to_bool,
-                        help="if set nesterov while performing selection")
-    parser.add_argument('--selection_lr', '-slr', type=float, default=0.1, help='learning rate for selection')
-    parser.add_argument("--selection_test_interval", '-sti', default=1, type=int, help=
-    "the number of training epochs to be performed between two test epochs during selection (default: 1)")
-    parser.add_argument("--selection_test_fraction", '-stf', type=float, default=1.,
-                        help="proportion of test dataset used for evaluating the model while performing selection (default: 1.)")
-    parser.add_argument('--balance', default=True, type=str_to_bool,
-                        help="whether balance selection is performed per class")
+    parser.add_argument(
+        "--selection_epochs",
+        "-se",
+        default=40,
+        type=int,
+        help="number of epochs while performing selection on full dataset",
+    )
+    parser.add_argument(
+        "--selection_momentum",
+        "-sm",
+        default=0.9,
+        type=float,
+        metavar="M",
+        help="momentum while performing selection (default: 0.9)",
+    )
+    parser.add_argument(
+        "--selection_weight_decay",
+        "-swd",
+        default=5e-4,
+        type=float,
+        metavar="W",
+        help="weight decay while performing selection (default: 5e-4)",
+        dest="selection_weight_decay",
+    )
+    parser.add_argument(
+        "--selection_optimizer",
+        "-so",
+        default="SGD",
+        help="optimizer to use while performing selection, e.g. SGD, Adam",
+    )
+    parser.add_argument(
+        "--selection_nesterov",
+        "-sn",
+        default=True,
+        type=str_to_bool,
+        help="if set nesterov while performing selection",
+    )
+    parser.add_argument(
+        "--selection_lr",
+        "-slr",
+        type=float,
+        default=0.1,
+        help="learning rate for selection",
+    )
+    parser.add_argument(
+        "--selection_test_interval",
+        "-sti",
+        default=1,
+        type=int,
+        help="the number of training epochs to be performed between two test epochs during selection (default: 1)",
+    )
+    parser.add_argument(
+        "--selection_test_fraction",
+        "-stf",
+        type=float,
+        default=1.0,
+        help="proportion of test dataset used for evaluating the model while performing selection (default: 1.)",
+    )
+    parser.add_argument(
+        "--balance",
+        default=True,
+        type=str_to_bool,
+        help="whether balance selection is performed per class",
+    )
 
     # Algorithm
-    parser.add_argument('--submodular', default="GraphCut", help="specify submodular function to use")
-    parser.add_argument('--submodular_greedy', default="LazyGreedy", help="specify greedy algorithm for submodular optimization")
-    parser.add_argument('--uncertainty', default="Entropy", help="specify uncertainty score to use")
+    parser.add_argument(
+        "--submodular", default="GraphCut", help="specify submodular function to use"
+    )
+    parser.add_argument(
+        "--submodular_greedy",
+        default="LazyGreedy",
+        help="specify greedy algorithm for submodular optimization",
+    )
+    parser.add_argument(
+        "--uncertainty", default="Entropy", help="specify uncertainty score to use"
+    )
 
     # Checkpoint and resumption
-    parser.add_argument('--save_path', "-sp", type=str, default='', help='path to save results (default: do not save)')
-    parser.add_argument('--resume', '-r', type=str, default='', help="path to latest checkpoint (default: do not load)")
+    parser.add_argument(
+        "--save_path",
+        "-sp",
+        type=str,
+        default="",
+        help="path to save results (default: do not save)",
+    )
+    parser.add_argument(
+        "--resume",
+        "-r",
+        type=str,
+        default="",
+        help="path to latest checkpoint (default: do not load)",
+    )
 
-    # oti
-    parser.add_argument('--num_gpus', type=int, default=3, help='number of GPUs to use for OTI')
-    parser.add_argument('--oti_mode', type=str, default='scores', choices=['full', 'stored', 'scores'], help='OTI operation mode')
+    # OTI specific arguments
+    parser.add_argument(
+        "--num_gpus", type=int, default=3, help="number of GPUs to use for OTI"
+    )
+    parser.add_argument(
+        "--oti_mode",
+        type=str,
+        default="scores",
+        choices=["full", "stored", "scores"],
+        help="OTI operation mode",
+    )
+    parser.add_argument(
+        "--oti_use_regularization",
+        action="store_true",
+        help="Use regularization in OTI score calculation",
+    )
+    parser.add_argument(
+        "--oti_use_learning_rate",
+        action="store_true",
+        help="Use learning rate in OTI score calculation",
+    )
+    parser.add_argument(
+        "--oti_use_sliding_window",
+        action="store_true",
+        help="Use sliding window in OTI score calculation",
+    )
 
     args = parser.parse_args()
-    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
     return args
 
 
@@ -116,7 +297,7 @@ def setup_experiment(args):
         args: The argument namespace parsed from the command line.
 
     Returns:
-        tuple: The loaded checkpoint dictionary (or an empty dict if not loading), 
+        tuple: The loaded checkpoint dictionary (or an empty dict if not loading),
                the starting experiment number, and the starting epoch number.
     """
     if args.train_batch is None:
@@ -143,82 +324,177 @@ def load_checkpoint(args):
     try:
         print(f"=> Loading checkpoint '{args.resume}'")
         checkpoint = torch.load(args.resume, map_location=args.device)
-        assert {"exp", "epoch", "state_dict", "opt_dict", "best_acc1", "rec", "subset", "sel_args"} <= set(checkpoint.keys())
-        assert 'indices' in checkpoint["subset"].keys()
-        start_exp = checkpoint['exp']
+        assert {
+            "exp",
+            "epoch",
+            "state_dict",
+            "opt_dict",
+            "best_acc1",
+            "rec",
+            "subset",
+            "sel_args",
+        } <= set(checkpoint.keys())
+        assert "indices" in checkpoint["subset"].keys()
+        start_exp = checkpoint["exp"]
         start_epoch = checkpoint["epoch"]
     except AssertionError:
         try:
             assert {"exp", "subset", "sel_args"} <= set(checkpoint.keys())
-            assert 'indices' in checkpoint["subset"].keys()
-            print("=> The checkpoint only contains the subset, training will start from the beginning")
-            start_exp = checkpoint['exp']
+            assert "indices" in checkpoint["subset"].keys()
+            print(
+                "=> The checkpoint only contains the subset, training will start from the beginning"
+            )
+            start_exp = checkpoint["exp"]
             start_epoch = 0
         except AssertionError:
             print("=> Failed to load the checkpoint, an empty one will be created")
             checkpoint = {}
             start_exp = 0
             start_epoch = 0
-    
+
     return checkpoint, start_exp, start_epoch
 
 
 def initialize_dataset_and_model(args, checkpoint):
     """Initialize the dataset and model for training."""
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = datasets.__dict__[args.dataset](args.data_path)
-    args.channel, args.im_size, args.num_classes, args.class_names = channel, im_size, num_classes, class_names
-    
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
+        datasets.__dict__[args.dataset](args.data_path)
+    )
+    args.channel, args.im_size, args.num_classes, args.class_names = (
+        channel,
+        im_size,
+        num_classes,
+        class_names,
+    )
+
     torch.random.manual_seed(args.seed)
 
     if "subset" in checkpoint.keys():
-        subset = checkpoint['subset']
+        subset = checkpoint["subset"]
         selection_args = checkpoint["sel_args"]
     else:
-        selection_args = dict(epochs=args.selection_epochs, selection_method=args.uncertainty, balance=args.balance, 
-                              greedy=args.submodular_greedy, function=args.submodular)
+        selection_args = dict(
+            epochs=args.selection_epochs,
+            selection_method=args.uncertainty,
+            balance=args.balance,
+            greedy=args.submodular_greedy,
+            function=args.submodular,
+        )
         # get the selection method class
         try:
             method_class: Type[CoresetMethod] = SELECTION_METHODS.get(args.selection)
             if method_class is None:
-                raise ValueError(f"Selection method {args.selection} not found. Available methods: {SELECTION_METHODS.keys()}")
+                raise ValueError(
+                    f"Selection method {args.selection} not found. Available methods: {SELECTION_METHODS.keys()}"
+                )
         except Exception as e:
             print(f"An error occurred while selecting the method: {e}")
             raise e
 
         # run selection method
-        method: CoresetMethod = method_class(dst_train, args, args.fraction, args.seed, **selection_args) # e.g. deepcore.methods.oti.OTI object
-        subset = method.select() # main selection function
+        if args.selection == "OTI":
+            method: CoresetMethod = method_class(
+                dst_train,
+                args,
+                args.fraction,
+                args.seed,
+                num_gpus=args.num_gpus,
+                mode=args.oti_mode,
+                use_regularization=args.oti_use_regularization,
+                use_learning_rate=args.oti_use_learning_rate,
+                use_sliding_window=args.oti_use_sliding_window,
+                **selection_args,
+            )
+        else:
+            method: CoresetMethod = method_class(
+                dst_train, args, args.fraction, args.seed, **selection_args
+            )
+
+        subset = method.select()
 
     if args.dataset in ["CIFAR10", "CIFAR100"]:
-        dst_train.transform = transforms.Compose([transforms.RandomCrop(args.im_size, padding=4, padding_mode="reflect"), 
-                                                  transforms.RandomHorizontalFlip(), dst_train.transform])
+        dst_train.transform = transforms.Compose(
+            [
+                transforms.RandomCrop(args.im_size, padding=4, padding_mode="reflect"),
+                transforms.RandomHorizontalFlip(),
+                dst_train.transform,
+            ]
+        )
     elif args.dataset == "ImageNet":
-        dst_train.transform = transforms.Compose([transforms.RandomResizedCrop(224), transforms.RandomHorizontalFlip(), 
-                                                  transforms.ToTensor(), transforms.Normalize(mean, std)])
+        dst_train.transform = transforms.Compose(
+            [
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
+            ]
+        )
 
     if_weighted = "weights" in subset.keys()
-    dst_subset = WeightedSubset(dst_train, subset["indices"], subset["weights"]) if if_weighted else torch.utils.data.Subset(dst_train, subset["indices"])
+    dst_subset = (
+        WeightedSubset(dst_train, subset["indices"], subset["weights"])
+        if if_weighted
+        else torch.utils.data.Subset(dst_train, subset["indices"])
+    )
 
-    train_loader = DataLoaderX(dst_subset, batch_size=args.train_batch, shuffle=True, num_workers=args.workers, 
-                               pin_memory=True) if args.dataset == "ImageNet" else torch.utils.data.DataLoader(dst_subset, 
-                                                                                                                batch_size=args.train_batch, shuffle=True, 
-                                                                                                                num_workers=args.workers, pin_memory=True)
-    test_loader = DataLoaderX(dst_test, batch_size=args.train_batch, shuffle=False, num_workers=args.workers, 
-                              pin_memory=True) if args.dataset == "ImageNet" else torch.utils.data.DataLoader(dst_test, 
-                                                                                                               batch_size=args.train_batch, shuffle=False, 
-                                                                                                               num_workers=args.workers, pin_memory=True)
-                              
-    if args.selection == 'OTI':
-        method = method_class(dst_train, args, args.fraction, args.seed, num_gpus=args.num_gpus, mode=args.oti_mode, **selection_args)
+    train_loader = (
+        DataLoaderX(
+            dst_subset,
+            batch_size=args.train_batch,
+            shuffle=True,
+            num_workers=args.workers,
+            pin_memory=True,
+        )
+        if args.dataset == "ImageNet"
+        else torch.utils.data.DataLoader(
+            dst_subset,
+            batch_size=args.train_batch,
+            shuffle=True,
+            num_workers=args.workers,
+            pin_memory=True,
+        )
+    )
+    test_loader = (
+        DataLoaderX(
+            dst_test,
+            batch_size=args.train_batch,
+            shuffle=False,
+            num_workers=args.workers,
+            pin_memory=True,
+        )
+        if args.dataset == "ImageNet"
+        else torch.utils.data.DataLoader(
+            dst_test,
+            batch_size=args.train_batch,
+            shuffle=False,
+            num_workers=args.workers,
+            pin_memory=True,
+        )
+    )
+
+    if args.selection == "OTI":
+        method = method_class(
+            dst_train,
+            args,
+            args.fraction,
+            args.seed,
+            num_gpus=args.num_gpus,
+            mode=args.oti_mode,
+            **selection_args,
+        )
     else:
-        method = method_class(dst_train, args, args.fraction, args.seed, **selection_args)
-        
+        method = method_class(
+            dst_train, args, args.fraction, args.seed, **selection_args
+        )
+
     return train_loader, test_loader, if_weighted, subset, selection_args
 
 
 def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     """Initialize the network, optimizer, and scheduler."""
-    network = nets.__dict__[model](args.channel, args.num_classes, args.im_size).to(args.device)
+    network = nets.__dict__[model](args.channel, args.num_classes, args.im_size).to(
+        args.device
+    )
 
     if args.device == "cpu":
         print("Using CPU.")
@@ -231,17 +507,47 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     if "state_dict" in checkpoint.keys():
         network.load_state_dict(checkpoint["state_dict"])
 
-    criterion = nn.CrossEntropyLoss(reduction='none').to(args.device)
-    
-    optimizer = torch.optim.SGD(network.parameters(), args.lr, momentum=args.momentum,
-                                        weight_decay=args.weight_decay, nesterov=args.nesterov) if args.optimizer == "SGD" else \
-                        torch.optim.Adam(network.parameters(), args.lr, weight_decay=args.weight_decay) if args.optimizer == "Adam" else \
-                        torch.optim.__dict__[args.optimizer](network.parameters(), args.lr, momentum=args.momentum,
-                                                             weight_decay=args.weight_decay, nesterov=args.nesterov)
-    
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, len(train_loader) * args.epochs, eta_min=args.min_lr) if args.scheduler == "CosineAnnealingLR" else \
-                torch.optim.lr_scheduler.StepLR(optimizer, step_size=len(train_loader) * args.step_size, gamma=args.gamma) if args.scheduler == "StepLR" else \
-                torch.optim.lr_scheduler.__dict__[args.scheduler](optimizer)
+    criterion = nn.CrossEntropyLoss(reduction="none").to(args.device)
+
+    optimizer = (
+        torch.optim.SGD(
+            network.parameters(),
+            args.lr,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
+            nesterov=args.nesterov,
+        )
+        if args.optimizer == "SGD"
+        else (
+            torch.optim.Adam(
+                network.parameters(), args.lr, weight_decay=args.weight_decay
+            )
+            if args.optimizer == "Adam"
+            else torch.optim.__dict__[args.optimizer](
+                network.parameters(),
+                args.lr,
+                momentum=args.momentum,
+                weight_decay=args.weight_decay,
+                nesterov=args.nesterov,
+            )
+        )
+    )
+
+    scheduler = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, len(train_loader) * args.epochs, eta_min=args.min_lr
+        )
+        if args.scheduler == "CosineAnnealingLR"
+        else (
+            torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=len(train_loader) * args.step_size,
+                gamma=args.gamma,
+            )
+            if args.scheduler == "StepLR"
+            else torch.optim.lr_scheduler.__dict__[args.scheduler](optimizer)
+        )
+    )
     scheduler.last_epoch = (start_epoch - 1) * len(train_loader)
 
     if "opt_dict" in checkpoint.keys():
@@ -252,7 +558,7 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
 
 def print_experiment_info(args, exp, checkpoint_name):
     """Print the experiment information."""
-    print('\n================== Exp %d ==================\n' % exp)
+    print("\n================== Exp %d ==================\n" % exp)
     print(
         "dataset: ",
         args.dataset,
@@ -276,77 +582,215 @@ def print_experiment_info(args, exp, checkpoint_name):
         args.resume,
         ", device: ",
         args.device,
-        (
-            f", checkpoint_name: {checkpoint_name}"
-            if args.save_path != ""
-            else ""
-        ),
+        (f", checkpoint_name: {checkpoint_name}" if args.save_path != "" else ""),
         "\n",
         sep="",
     )
 
 
-def train_and_evaluate_model(args, exp, start_epoch, train_loader, test_loader, subset, selection_args, checkpoint_name, model, checkpoint):
+def train_and_evaluate_model(
+    args,
+    exp,
+    start_epoch,
+    train_loader,
+    test_loader,
+    subset,
+    selection_args,
+    checkpoint_name,
+    model,
+    checkpoint,
+):
     """Train and evaluate a single model."""
-    network, criterion, optimizer, scheduler = initialize_network(args, model, train_loader, checkpoint, start_epoch)
+    network, criterion, optimizer, scheduler = initialize_network(
+        args, model, train_loader, checkpoint, start_epoch
+    )
     rec = checkpoint["rec"] if "rec" in checkpoint.keys() else init_recorder()
     best_prec1 = checkpoint["best_acc1"] if "best_acc1" in checkpoint.keys() else 0.0
 
     if args.save_path != "" and args.resume == "":
-        save_checkpoint({"exp": exp, "subset": subset, "sel_args": selection_args},
-                        os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else f"{model}_") + "unknown.ckpt"), 0, 0.0)
+        save_checkpoint(
+            {"exp": exp, "subset": subset, "sel_args": selection_args},
+            os.path.join(
+                args.save_path,
+                checkpoint_name
+                + ("" if model == args.model else f"{model}_")
+                + "unknown.ckpt",
+            ),
+            0,
+            0.0,
+        )
 
     for epoch in range(start_epoch, args.epochs):
-        train(train_loader, network, criterion, optimizer, scheduler, epoch, args, rec, if_weighted="weights" in subset)
+        train(
+            train_loader,
+            network,
+            criterion,
+            optimizer,
+            scheduler,
+            epoch,
+            args,
+            rec,
+            if_weighted="weights" in subset,
+        )
 
         if args.test_interval > 0 and (epoch + 1) % args.test_interval == 0:
             prec1 = test(test_loader, network, criterion, epoch, args, rec)
-            best_prec1 = save_best_checkpoint(args, exp, epoch, network, optimizer, best_prec1, prec1, rec, checkpoint_name, subset, selection_args, model)
+            best_prec1 = save_best_checkpoint(
+                args,
+                exp,
+                epoch,
+                network,
+                optimizer,
+                best_prec1,
+                prec1,
+                rec,
+                checkpoint_name,
+                subset,
+                selection_args,
+                model,
+            )
 
-    finalize_checkpoint(args, exp, best_prec1, checkpoint_name, model, network, optimizer, rec, subset, selection_args)
+    finalize_checkpoint(
+        args,
+        exp,
+        best_prec1,
+        checkpoint_name,
+        model,
+        network,
+        optimizer,
+        rec,
+        subset,
+        selection_args,
+    )
 
 
-def save_best_checkpoint(args, exp, epoch, network, optimizer, best_prec1, prec1, rec, checkpoint_name, subset, selection_args, model):
+def save_best_checkpoint(
+    args,
+    exp,
+    epoch,
+    network,
+    optimizer,
+    best_prec1,
+    prec1,
+    rec,
+    checkpoint_name,
+    subset,
+    selection_args,
+    model,
+):
     """Save the checkpoint if the current model has the best accuracy."""
     is_best = prec1 > best_prec1
     if is_best:
         best_prec1 = prec1
         if args.save_path != "":
             rec = record_ckpt(rec, epoch)
-            save_checkpoint({"exp": exp, "epoch": epoch + 1, "state_dict": network.state_dict(),
-                             "opt_dict": optimizer.state_dict(), "best_acc1": best_prec1, "rec": rec,
-                             "subset": subset, "sel_args": selection_args},
-                            os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else f"{model}_") + "unknown.ckpt"), epoch=epoch, prec=best_prec1)
+            save_checkpoint(
+                {
+                    "exp": exp,
+                    "epoch": epoch + 1,
+                    "state_dict": network.state_dict(),
+                    "opt_dict": optimizer.state_dict(),
+                    "best_acc1": best_prec1,
+                    "rec": rec,
+                    "subset": subset,
+                    "sel_args": selection_args,
+                },
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "unknown.ckpt",
+                ),
+                epoch=epoch,
+                prec=best_prec1,
+            )
     return best_prec1
 
 
-def finalize_checkpoint(args, exp, best_prec1, checkpoint_name, model, network, optimizer, rec, subset, selection_args):
+def finalize_checkpoint(
+    args,
+    exp,
+    best_prec1,
+    checkpoint_name,
+    model,
+    network,
+    optimizer,
+    rec,
+    subset,
+    selection_args,
+):
     """Finalize the checkpoint: rename or save the final checkpoint."""
     if args.save_path != "":
         try:
-            os.rename(os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else f"{model}_") + "unknown.ckpt"),
-                      os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else f"{model}_") + "%f.ckpt" % best_prec1))
+            os.rename(
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "unknown.ckpt",
+                ),
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "%f.ckpt" % best_prec1,
+                ),
+            )
         except Exception:
-            save_checkpoint({"exp": exp, "epoch": args.epochs, "state_dict": network.state_dict(),
-                             "opt_dict": optimizer.state_dict(), "best_acc1": best_prec1, "rec": rec,
-                             "subset": subset, "sel_args": selection_args},
-                            os.path.join(args.save_path, checkpoint_name + ("" if model == args.model else f"{model}_") + "%f.ckpt" % best_prec1),
-                            epoch=args.epochs - 1, prec=best_prec1)
+            save_checkpoint(
+                {
+                    "exp": exp,
+                    "epoch": args.epochs,
+                    "state_dict": network.state_dict(),
+                    "opt_dict": optimizer.state_dict(),
+                    "best_acc1": best_prec1,
+                    "rec": rec,
+                    "subset": subset,
+                    "sel_args": selection_args,
+                },
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "%f.ckpt" % best_prec1,
+                ),
+                epoch=args.epochs - 1,
+                prec=best_prec1,
+            )
 
 
 def run_experiment(args, checkpoint, start_exp, start_epoch):
     """Run the main training and evaluation loop."""
     for exp in range(start_exp, args.num_exp):
-        checkpoint_name = setup_checkpoint_name(args, exp) if args.save_path != "" else ""
+        checkpoint_name = (
+            setup_checkpoint_name(args, exp) if args.save_path != "" else ""
+        )
         print_experiment_info(args, exp, checkpoint_name)
 
-        train_loader, test_loader, if_weighted, subset, selection_args = initialize_dataset_and_model(args, checkpoint)
-        models = [args.model] + ([model for model in args.cross if model != args.model] if isinstance(args.cross, list) else [])
+        train_loader, test_loader, if_weighted, subset, selection_args = (
+            initialize_dataset_and_model(args, checkpoint)
+        )
+        models = [args.model] + (
+            [model for model in args.cross if model != args.model]
+            if isinstance(args.cross, list)
+            else []
+        )
 
         for model in models:
             if len(models) > 1:
                 print(f"| Training on model {model}")
-            train_and_evaluate_model(args, exp, start_epoch, train_loader, test_loader, subset, selection_args, checkpoint_name, model, checkpoint)
+            train_and_evaluate_model(
+                args,
+                exp,
+                start_epoch,
+                train_loader,
+                test_loader,
+                subset,
+                selection_args,
+                checkpoint_name,
+                model,
+                checkpoint,
+            )
 
         start_epoch = 0
         checkpoint = {}
@@ -356,7 +800,14 @@ def run_experiment(args, checkpoint, start_exp, start_epoch):
 def setup_checkpoint_name(args, exp):
     """Set up checkpoint name based on experiment details."""
     return "{dst}_{net}_{mtd}_exp{exp}_epoch{epc}_{dat}_{fr}_".format(
-        dst=args.dataset, net=args.model, mtd=args.selection, dat=datetime.now(), exp=exp, epc=args.epochs, fr=args.fraction)
+        dst=args.dataset,
+        net=args.model,
+        mtd=args.selection,
+        dat=datetime.now(),
+        exp=exp,
+        epc=args.epochs,
+        fr=args.fraction,
+    )
 
 
 def main():
@@ -380,5 +831,5 @@ def main():
     run_experiment(args, checkpoint, start_exp, start_epoch)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
