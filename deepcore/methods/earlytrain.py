@@ -53,12 +53,12 @@ class EarlyTrain(CoresetMethod):
         dst_pretrain_dict: dict = None,
         fraction_pretrain=1.0,
         dst_test=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the EarlyTrain instance.
 
-        define: 
+        define:
         - self.epochs (int): Number of epochs to train. e.g. 5
         - self.n_train (int): Number of samples in the training dataset. e.g. 60000
         - self.coreset_size (int): Size of the coreset to be selected. e.g. 6000
@@ -70,7 +70,7 @@ class EarlyTrain(CoresetMethod):
         - self.n_pretrain (int): Number of samples in the pretraining dataset. e.g. 60000
         - self.n_pretrain_size (int): Number of samples to use for pretraining. e.g. 60000
         - self.dst_test (Dataset): Test dataset, if provided. e.g. None
-        
+
         Sets up the training environment, including dataset preparation, model selection,
         and optimization settings.
         """
@@ -205,20 +205,24 @@ class EarlyTrain(CoresetMethod):
         self.train_indx = np.arange(self.n_train)
 
         # Setup model and loss
-        self.model = nets.__dict__[
+        model_name = (
             self.args.model if self.specific_model is None else self.specific_model
-        ](
-            self.args.channel,
-            (
-                self.dst_pretrain_dict["num_classes"]
-                if self.if_dst_pretrain
-                else self.num_classes
-            ),
-            pretrained=self.torchvision_pretrain,
-            im_size=(224, 224) if self.torchvision_pretrain else self.args.im_size,
-        ).to(
-            self.args.device
         )
+
+        # Check if the model exists in nets.__dict__ before accessing
+        if model_name in nets.__dict__:
+            self.model = nets.__dict__[model_name](
+                self.args.channel,
+                (
+                    self.dst_pretrain_dict["num_classes"]
+                    if self.if_dst_pretrain
+                    else self.num_classes
+                ),
+                pretrained=self.torchvision_pretrain,
+                im_size=(224, 224) if self.torchvision_pretrain else self.args.im_size,
+            ).to(self.args.device)
+        else:
+            raise ValueError(f"Model '{model_name}' not found in nets.__dict__")
 
         if self.args.device == "cpu":
             print("Using CPU.")
