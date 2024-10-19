@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 24th August 2024 11:12:25 am
+# Last Modified: Sunday, 20th October 2024 2:01:49 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -42,8 +42,8 @@ class OTI(EarlyTrain):
         random_seed=None,
         epochs=200,
         specific_model=None,
-        mode="scores",  # [full, stored, scores]
-        fractions=[0.8, 0.5, 0.3],  # New parameter for subset fractions
+        mode="scores",
+        fractions=None,
         **kwargs,
     ):
         """
@@ -57,6 +57,8 @@ class OTI(EarlyTrain):
             epochs (int, optional): Number of training epochs. Defaults to 200.
             specific_model (str, optional): Name of a specific model to use. Defaults to None.
         """
+        if fractions is None:
+            fractions = [0.8, 0.5, 0.3]
         super().__init__(
             dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
         )
@@ -78,6 +80,7 @@ class OTI(EarlyTrain):
         self.mode = args.oti_mode if hasattr(args, "oti_mode") else mode
         self.fractions = fractions
         self.pseudo_params_list = []  # To store pseudo parameters for each data point
+        self.lr_history = {}  # To store learning rates for each epoch
 
     def before_run(self):
         """
@@ -128,7 +131,7 @@ class OTI(EarlyTrain):
 
         # Check if this is the best loss so far
         current_loss = loss.mean().item()
-        if current_loss < self.best_loss:
+        if current_loss < getattr(self, "best_loss", float("inf")):
             self.best_loss = current_loss
             self.best_params = {
                 name: param.cpu().clone().detach()
@@ -144,7 +147,7 @@ class OTI(EarlyTrain):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
         with open(best_params_path, "wb") as f:
             pickle.dump(self.best_params, f)
-        print(f"[OTI] Best parameters saved to {best_params_path}")
+        # print(f"[OTI] Best parameters saved to {best_params_path}")
 
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
@@ -195,10 +198,36 @@ class OTI(EarlyTrain):
 
         # Save other information
         with open(os.path.join(batch_dir, "info.pkl"), "wb") as f:
-            pickle.dump({"loss": loss}, f)
+            pickle.dump({"loss": loss, "lr": self.get_lr()}, f)
+
+    # def run(self):
+    #     result = super().run()
+
+    #     # Set up the scheduler after the optimizer is created in the parent's run method
+    #     if self.args.scheduler == "CosineAnnealingLR":
+    #         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #             self.model_optimizer, T_max=self.epochs
+    #         )
+    #     elif self.args.scheduler == "StepLR":
+    #         self.scheduler = torch.optim.lr_scheduler.StepLR(
+    #             self.model_optimizer, step_size=30, gamma=0.1
+    #         )
+    #     # Add more scheduler options as needed
+
+    #     return result
+
+    # def get_lr(self):
+    #     return self.model_optimizer.param_groups[0]["lr"]
 
     def after_epoch(self):
         super().after_epoch()
+
+        current_lr = self.get_lr()
+        self.lr_history[self.current_epoch] = current_lr
+        print(f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}")
+
+        if self.scheduler:
+            self.scheduler.step()
 
         file_path = os.path.join(
             self.args.save_path, f"epoch_{self.current_epoch}_data.pkl"
@@ -214,11 +243,15 @@ class OTI(EarlyTrain):
                         if len(self.epoch_losses) > 1
                         else True
                     ),
+                    "learning_rate": current_lr,  # 只保存当前epoch的学习率
                 },
                 f,
             )
 
-        print(f"[OTI] Parameters and data order saved for epoch {self.current_epoch}")
+        print(
+            f"[OTI] Parameters, data order, and learning rate saved for epoch {self.current_epoch}"
+        )
+
         self.current_epoch_parameters = []
         self.current_step = 0
         self.current_epoch += 1
@@ -535,6 +568,32 @@ class OTI(EarlyTrain):
             )
         with open(best_params_path, "rb") as f:
             return pickle.load(f)
+
+    @staticmethod
+    def verify_saved_lr(save_path, num_epochs):
+        print("[OTI] Starting learning rate verification...")
+        for epoch in range(num_epochs):
+            epoch_file = os.path.join(save_path, f"epoch_{epoch}_data.pkl")
+            if not os.path.exists(epoch_file):
+                print(f"[OTI] Warning: File not found for epoch {epoch}")
+                continue
+
+            try:
+                with open(epoch_file, "rb") as f:
+                    epoch_data = pickle.load(f)
+            except Exception as e:
+                print(f"[OTI] Error reading file for epoch {epoch}: {str(e)}")
+                continue
+
+            if "learning_rate" not in epoch_data:
+                print(
+                    f"[OTI] Warning: Learning rate not found in data for epoch {epoch}"
+                )
+            else:
+                lr = epoch_data["learning_rate"]
+                print(f"[OTI] Epoch {epoch} learning rate: {lr}")
+
+        print("[OTI] Learning rate verification completed.")
 
 
 # Add OTI to SELECTION_METHODS

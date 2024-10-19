@@ -70,6 +70,9 @@ class EarlyTrain(CoresetMethod):
         - self.n_pretrain (int): Number of samples in the pretraining dataset. e.g. 60000
         - self.n_pretrain_size (int): Number of samples to use for pretraining. e.g. 60000
         - self.dst_test (Dataset): Test dataset, if provided. e.g. None
+        - self.scheduler (None): e.g. COSineAnnealingLR
+        - self.current_epoch (int): e.g. 0
+        - self.current_step (int): e.g. 0
 
         Sets up the training environment, including dataset preparation, model selection,
         and optimization settings.
@@ -134,6 +137,10 @@ class EarlyTrain(CoresetMethod):
             * (self.n_pretrain if self.if_dst_pretrain else self.n_train)
         )
         self.dst_test = dst_test
+        # self.args.scheduler = "CosineAnnealingLR"
+        self.scheduler = None
+        self.current_epoch = 0
+        self.current_step = 0
 
     def train(self, epoch, list_of_train_idx, **kwargs):
         """
@@ -237,6 +244,28 @@ class EarlyTrain(CoresetMethod):
         self.criterion = nn.CrossEntropyLoss().to(self.args.device)
         self.criterion.__init__()
 
+        # Setup optimizer and scheduler
+        self.setup_optimizer_and_scheduler()
+
+        for epoch in range(self.epochs):
+            list_of_train_idx = np.random.choice(
+                np.arange(self.n_pretrain if self.if_dst_pretrain else self.n_train),
+                self.n_pretrain_size,
+                replace=False,
+            )
+            self.before_epoch()
+            self.train(epoch, list_of_train_idx)
+            if (
+                self.dst_test is not None
+                and self.args.selection_test_interval > 0
+                and (epoch + 1) % self.args.selection_test_interval == 0
+            ):
+                self.test(epoch)
+            self.after_epoch()
+
+        return self.finish_run()
+
+    def setup_optimizer_and_scheduler(self):
         # Setup optimizer
         if self.args.selection_optimizer == "SGD":
             self.model_optimizer = torch.optim.SGD(
@@ -261,25 +290,16 @@ class EarlyTrain(CoresetMethod):
                 nesterov=self.args.selection_nesterov,
             )
 
-        self.before_run()
-
-        for epoch in range(self.epochs):
-            list_of_train_idx = np.random.choice(
-                np.arange(self.n_pretrain if self.if_dst_pretrain else self.n_train),
-                self.n_pretrain_size,
-                replace=False,
+        # Setup scheduler
+        if self.args.scheduler == "CosineAnnealingLR":
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.model_optimizer, T_max=self.epochs
             )
-            self.before_epoch()
-            self.train(epoch, list_of_train_idx)
-            if (
-                self.dst_test is not None
-                and self.args.selection_test_interval > 0
-                and (epoch + 1) % self.args.selection_test_interval == 0
-            ):
-                self.test(epoch)
-            self.after_epoch()
-
-        return self.finish_run()
+        elif self.args.scheduler == "StepLR":
+            self.scheduler = torch.optim.lr_scheduler.StepLR(
+                self.model_optimizer, step_size=30, gamma=0.1
+            )
+        # Add more scheduler options as needed
 
     def test(self, epoch):
         """
@@ -354,6 +374,14 @@ class EarlyTrain(CoresetMethod):
         Perform actions before training starts.
         """
         pass
+
+    def get_lr(self):
+        return self.model_optimizer.param_groups[0]["lr"]
+
+    def step_scheduler(self):
+        if self.scheduler:
+            self.scheduler.step()
+            print(f"[EarlyTrain] Stepped scheduler. New LR: {self.get_lr()}")
 
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
         """
