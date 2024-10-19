@@ -186,8 +186,8 @@ def initialize_dataset_and_model(args, checkpoint):
             raise e
 
         # run selection method
-        method: CoresetMethod = method_class(dst_train, args, args.fraction, args.seed, **selection_args)
-        subset = method.select()
+        method: CoresetMethod = method_class(dst_train, args, args.fraction, args.seed, **selection_args) # e.g. deepcore.methods.oti.OTI object
+        subset = method.select() # main selection function
 
     if args.dataset in ["CIFAR10", "CIFAR100"]:
         dst_train.transform = transforms.Compose([transforms.RandomCrop(args.im_size, padding=4, padding_mode="reflect"), 
