@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 21st October 2024 4:58:50 pm
+# Last Modified: Monday, 21st October 2024 5:01:17 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -24,6 +24,7 @@ from utils import *
 from datetime import datetime
 from time import sleep
 from typing import Type
+import logging
 
 
 def parse_args():
@@ -313,29 +314,36 @@ def setup_experiment(args):
         tuple: The loaded checkpoint dictionary (or an empty dict if not loading),
                the starting experiment number, and the starting epoch number.
     """
+    logger = logging.getLogger(__name__)
+
     if args.train_batch is None:
         args.train_batch = args.batch
     if args.selection_batch is None:
         args.selection_batch = args.batch
     if args.save_path != "" and not os.path.exists(args.save_path):
         os.mkdir(args.save_path)
+        logger.info(f"Created directory: {args.save_path}")
     if not os.path.exists(args.data_path):
         os.mkdir(args.data_path)
+        logger.info(f"Created directory: {args.data_path}")
 
     if args.resume != "":
         checkpoint, start_exp, start_epoch = load_checkpoint(args)
+        logger.info(f"Resuming from checkpoint: {args.resume}")
     else:
         checkpoint = {}
         start_exp = 0
         start_epoch = 0
+        logger.info("Starting new experiment")
 
     return checkpoint, start_exp, start_epoch
 
 
 def load_checkpoint(args):
     """Load checkpoint if resume is specified."""
+    logger = logging.getLogger(__name__)
     try:
-        print(f"=> Loading checkpoint '{args.resume}'")
+        logger.info(f"Loading checkpoint '{args.resume}'")
         checkpoint = torch.load(args.resume, map_location=args.device)
         assert {
             "exp",
@@ -350,17 +358,22 @@ def load_checkpoint(args):
         assert "indices" in checkpoint["subset"].keys()
         start_exp = checkpoint["exp"]
         start_epoch = checkpoint["epoch"]
+        logger.info(
+            f"Checkpoint loaded. Resuming from experiment {start_exp}, epoch {start_epoch}"
+        )
     except AssertionError:
         try:
             assert {"exp", "subset", "sel_args"} <= set(checkpoint.keys())
             assert "indices" in checkpoint["subset"].keys()
-            print(
-                "=> The checkpoint only contains the subset, training will start from the beginning"
+            logger.info(
+                "The checkpoint only contains the subset, training will start from the beginning"
             )
             start_exp = checkpoint["exp"]
             start_epoch = 0
         except AssertionError:
-            print("=> Failed to load the checkpoint, an empty one will be created")
+            logger.warning(
+                "Failed to load the checkpoint, an empty one will be created"
+            )
             checkpoint = {}
             start_exp = 0
             start_epoch = 0
@@ -370,6 +383,9 @@ def load_checkpoint(args):
 
 def initialize_dataset_and_model(args, checkpoint):
     """Initialize the dataset and model for training."""
+
+    logger = logging.getLogger(__name__)
+
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
         datasets.__dict__[args.dataset](args.data_path)
     )
@@ -401,7 +417,7 @@ def initialize_dataset_and_model(args, checkpoint):
                     f"Selection method {args.selection} not found. Available methods: {SELECTION_METHODS.keys()}"
                 )
         except Exception as e:
-            print(f"An error occurred while selecting the method: {e}")
+            logger.error(f"An error occurred while selecting the method: {e}")
             raise e
 
         # run selection method
@@ -510,7 +526,7 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     )
 
     if args.device == "cpu":
-        print("Using CPU.")
+        logging.warning("Using CPU.")
     elif args.gpu is not None:
         torch.cuda.set_device(args.gpu[0])
         network = nets.nets_utils.MyDataParallel(network, device_ids=args.gpu)
@@ -571,33 +587,11 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
 
 def print_experiment_info(args, exp, checkpoint_name):
     """Print the experiment information."""
-    print("\n================== Exp %d ==================\n" % exp)
-    print(
-        "dataset: ",
-        args.dataset,
-        ", model: ",
-        args.model,
-        ", selection: ",
-        args.selection,
-        ", num_ex: ",
-        args.num_exp,
-        ", epochs: ",
-        args.epochs,
-        ", fraction: ",
-        args.fraction,
-        ", seed: ",
-        args.seed,
-        ", lr: ",
-        args.lr,
-        ", save_path: ",
-        args.save_path,
-        ", resume: ",
-        args.resume,
-        ", device: ",
-        args.device,
-        (f", checkpoint_name: {checkpoint_name}" if args.save_path != "" else ""),
-        "\n",
-        sep="",
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"================== Exp {exp} ==================")
+    logger.info(
+        f"dataset: {args.dataset}, model: {args.model}, selection: {args.selection}, num_ex: {args.num_exp}, epochs: {args.epochs}, fraction: {args.fraction}, seed: {args.seed}, lr: {args.lr}, save_path: {args.save_path}, resume: {args.resume}, device: {args.device}, {'checkpoint_name: {checkpoint_name}' if args.save_path != '' else ''}"
     )
 
 
@@ -774,6 +768,7 @@ def finalize_checkpoint(
 
 def run_experiment(args, checkpoint, start_exp, start_epoch):
     """Run the main training and evaluation loop."""
+    logger = logging.getLogger(__name__)
     for exp in range(start_exp, args.num_exp):
         checkpoint_name = (
             setup_checkpoint_name(args, exp) if args.save_path != "" else ""
@@ -791,7 +786,7 @@ def run_experiment(args, checkpoint, start_exp, start_epoch):
 
         for model in models:
             if len(models) > 1:
-                print(f"| Training on model {model}")
+                logger.info(f"| Training on model {model}")
             train_and_evaluate_model(
                 args,
                 exp,
@@ -839,9 +834,20 @@ def main():
     Returns:
         None
     """
+    logger = setup_logging()
+    logger.info("Starting the main function")
+
     args = parse_args()
+    logger.info(f"Parsed arguments: {args}")
+
     checkpoint, start_exp, start_epoch = setup_experiment(args)
+    logger.info(
+        f"Experiment setup complete. Starting from experiment {start_exp}, epoch {start_epoch}"
+    )
+
     run_experiment(args, checkpoint, start_exp, start_epoch)
+
+    logger.info("Main function completed")
 
 
 if __name__ == "__main__":

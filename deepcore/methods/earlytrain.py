@@ -5,6 +5,7 @@ import numpy as np
 from copy import deepcopy
 from .. import nets
 from torchvision import transforms
+import logging
 
 
 class EarlyTrain(CoresetMethod):
@@ -80,6 +81,10 @@ class EarlyTrain(CoresetMethod):
         if dst_pretrain_dict is None:
             dst_pretrain_dict = {}
         super().__init__(dst_train, args, fraction, random_seed)
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(
+            f"__init__({dst_train}, {args}, {fraction}, {random_seed}, {epochs}, {specific_model}, {torchvision_pretrain}, {dst_pretrain_dict}, {fraction_pretrain}, {dst_test}, {kwargs})"
+        )
         self.epochs = epochs
         self.n_train = len(dst_train)
         self.coreset_size = round(self.n_train * fraction)
@@ -153,6 +158,7 @@ class EarlyTrain(CoresetMethod):
         Returns:
             The result of finish_train method.
         """
+        self.logger.info(f"train({epoch}, {list_of_train_idx}, {kwargs})")
         self.before_train()
         self.model.train()
 
@@ -207,6 +213,7 @@ class EarlyTrain(CoresetMethod):
         Returns:
             The result of finish_run method.
         """
+        self.logger.info("run()")
         torch.manual_seed(self.random_seed)
         np.random.seed(self.random_seed)
         self.train_indx = np.arange(self.n_train)
@@ -308,6 +315,7 @@ class EarlyTrain(CoresetMethod):
         Args:
             epoch (int): Current epoch number.
         """
+        self.logger.info(f"test({epoch})")
         self.model.no_grad = True
         self.model.eval()
 
@@ -373,7 +381,7 @@ class EarlyTrain(CoresetMethod):
         """
         Perform actions before training starts.
         """
-        pass
+        self.logger.info("before_train()")
 
     def get_lr(self):
         return self.model_optimizer.param_groups[0]["lr"]
@@ -394,7 +402,9 @@ class EarlyTrain(CoresetMethod):
             batch_inds: Indices of the current batch.
             epoch: Current epoch number.
         """
-        pass
+        self.logger.debug(
+            f"after_loss({outputs}, {loss}, {targets}, {batch_inds}, {epoch})"
+        )
 
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
@@ -408,7 +418,9 @@ class EarlyTrain(CoresetMethod):
             batch_idx: Current batch index.
             batch_size: Size of the current batch.
         """
-        pass
+        self.logger.info(
+            f"while_update({outputs}, {loss}, {targets}, {epoch}, {batch_idx}, {batch_size})"
+        )
 
     def finish_train(self):
         """
@@ -417,25 +429,25 @@ class EarlyTrain(CoresetMethod):
         Returns:
             Any result from the training process.
         """
-        pass
+        self.logger.info("finish_train()")
 
     def before_epoch(self):
         """
         Perform actions before each epoch starts.
         """
-        pass
+        self.logger.info("before_epoch()")
 
     def after_epoch(self):
         """
         Perform actions after each epoch ends.
         """
-        pass
+        self.logger.info("after_epoch()")
 
     def before_run(self):
         """
         Perform actions before the entire run starts.
         """
-        pass
+        self.logger.info("before_run()")
 
     def finish_run(self):
         """
@@ -444,7 +456,7 @@ class EarlyTrain(CoresetMethod):
         Returns:
             Any result from the run process.
         """
-        pass
+        self.logger.info("finish_run()")
 
     def select(self, **kwargs):
         """
@@ -453,4 +465,5 @@ class EarlyTrain(CoresetMethod):
         Returns:
             selection_result: Result of the selection process.
         """
+        self.logger.info(f"select({kwargs})")
         return self.run()

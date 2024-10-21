@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 20th October 2024 2:25:26 am
+# Last Modified: Monday, 21st October 2024 8:06:13 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -24,6 +24,8 @@ import numpy as np
 import pickle
 import torch.multiprocessing as mp
 from tqdm import tqdm
+import logging
+from typing import override
 
 
 class OTI(EarlyTrain):
@@ -65,6 +67,7 @@ class OTI(EarlyTrain):
         super().__init__(
             dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
         )
+        self.logger = logging.getLogger(__name__)
 
         # Force batch size to 1 for OTI method
         # self.args.selection_batch = 1
@@ -88,6 +91,7 @@ class OTI(EarlyTrain):
         self.use_learning_rate = use_learning_rate
         self.use_sliding_window = use_sliding_window
 
+    @override
     def before_run(self):
         """
         Perform actions before the entire run starts.
@@ -104,8 +108,9 @@ class OTI(EarlyTrain):
         initial_params_path = os.path.join(self.args.save_path, "initial_params.pkl")
         with open(initial_params_path, "wb") as f:
             pickle.dump(self.initial_params, f)
-        print(f"[OTI] Initial parameters saved to {initial_params_path}")
+        self.logger.info(f"[OTI] Initial parameters saved to {initial_params_path}")
 
+    @override
     def train(self, epoch, list_of_train_idx):
         """
         Get the train index for each epoch.
@@ -116,6 +121,7 @@ class OTI(EarlyTrain):
         )  # Store the data order for this epoch
         return super().train(epoch, list_of_train_idx)
 
+    @override
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
         """
         Perform operations after loss calculation, including generating and saving pseudo parameters.
@@ -153,8 +159,9 @@ class OTI(EarlyTrain):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
         with open(best_params_path, "wb") as f:
             pickle.dump(self.best_params, f)
-        # print(f"[OTI] Best parameters saved to {best_params_path}")
+        self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
 
+    @override
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
         Perform actions during the update step, including saving model parameters
@@ -174,10 +181,10 @@ class OTI(EarlyTrain):
         """
         # Print progress
         if batch_idx % self.args.print_freq == 0:
-            print(
+            self.logger.info(
                 f"| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
             )
-            print("[OTI] Saving model parameters...")
+            self.logger.info("[OTI] Saving model parameters...")
 
         # Save the initial parameters of the batch (on CPU)
         self.current_batch_initial_params = {
@@ -225,12 +232,13 @@ class OTI(EarlyTrain):
     # def get_lr(self):
     #     return self.model_optimizer.param_groups[0]["lr"]
 
+    @override
     def after_epoch(self):
         super().after_epoch()
 
         current_lr = self.get_lr()
         self.lr_history[self.current_epoch] = current_lr
-        print(f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}")
+        self.logger.info(f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}")
 
         if self.scheduler:
             self.scheduler.step()
@@ -254,7 +262,7 @@ class OTI(EarlyTrain):
                 f,
             )
 
-        print(
+        self.logger.info(
             f"[OTI] Parameters, data order, and learning rate saved for epoch {self.current_epoch}"
         )
 
@@ -360,8 +368,7 @@ class OTI(EarlyTrain):
         try:
             best_params = self.load_best_params()
         except FileNotFoundError as e:
-            print(f"Error: {e}")
-            print("[OTI] Using the current model parameters as the best parameters.")
+            self.logger.info("[OTI] Using the current model parameters as the best parameters.")
             best_params = {
                 name: param.cpu().clone().detach()
                 for name, param in self.model.state_dict().items()
@@ -504,7 +511,7 @@ class OTI(EarlyTrain):
                 torch.cuda.empty_cache()
 
         if use_sliding_window:
-            print("[OTI] Warning: Sliding window not yet implemented.")
+            self.logger.warning("[OTI] Warning: Sliding window not yet implemented.")
 
         return total_scores
 
@@ -550,7 +557,7 @@ class OTI(EarlyTrain):
                     total_scores[idx] += score
 
         if use_sliding_window:
-            print(
+            self.logger.warning(
                 "[OTI] Warning: Sliding window not yet implemented for multi-GPU calculation."
             )
 
@@ -573,6 +580,7 @@ class OTI(EarlyTrain):
                 return epoch_data.get("learning_rate", 1.0)
         return 1.0
 
+    @override
     def select(
         self,
         use_regularization=False,
@@ -611,6 +619,7 @@ class OTI(EarlyTrain):
 
         return {"indices": selected_indices, "scores": score_array}
 
+    @override
     def finish_run(self):
         """
         Finish the run by saving the best parameters and preserving all intermediate results.
@@ -619,16 +628,16 @@ class OTI(EarlyTrain):
         epoch data files for further analysis or debugging purposes.
         """
         if self.best_params is None:
-            print("[OTI] Warning: No best parameters were saved during the run.")
+            self.logger.warning("[OTI] Warning: No best parameters were saved during the run.")
             self.best_params = {
                 name: param.cpu().clone().detach()
                 for name, param in self.model.state_dict().items()
             }
             self.save_best_params()
-            print("[OTI] Run finished. All intermediate results have been preserved.")
+            self.logger.info("[OTI] Run finished. All intermediate results have been preserved.")
         else:
 
-            print("[OTI] Best parameters were successfully saved during the run.")
+            self.logger.info("[OTI] Best parameters were successfully saved during the run.")
 
     def load_best_params(self):
         """
