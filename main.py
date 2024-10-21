@@ -1,3 +1,16 @@
+###
+# File: /main.py
+# Created Date: Monday, October 21st 2024
+# Author: Zihan
+# -----
+# Last Modified: Monday, 21st October 2024 4:58:50 pm
+# Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
+# -----
+# HISTORY:
+# Date      		By   	Comments
+# ----------		------	---------------------------------------------------------
+###
+
 import os
 import torch.nn as nn
 import argparse
