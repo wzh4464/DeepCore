@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 21st October 2024 8:06:13 pm
+# Last Modified: Tuesday, 22nd October 2024 10:24:09 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -36,6 +36,7 @@ class OTI(EarlyTrain):
     to calculate a score for each data point. The final selection of the subset is based on these scores.
     """
 
+    # Constructor and Initialization Methods
     def __init__(
         self,
         dst_train,
@@ -111,6 +112,43 @@ class OTI(EarlyTrain):
         self.logger.info(f"[OTI] Initial parameters saved to {initial_params_path}")
 
     @override
+    def after_epoch(self):
+        super().after_epoch()
+
+        current_lr = self.get_lr()
+        self.lr_history[self.current_epoch] = current_lr
+        self.logger.info(
+            f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}"
+        )
+
+    @override
+    def finish_run(self):
+        """
+        Finish the run by saving the best parameters and preserving all intermediate results.
+
+        This method saves the best parameters to a separate file and keeps all the intermediate
+        epoch data files for further analysis or debugging purposes.
+        """
+        if self.best_params is None:
+            self.logger.warning(
+                "[OTI] Warning: No best parameters were saved during the run."
+            )
+            self.best_params = {
+                name: param.cpu().clone().detach()
+                for name, param in self.model.state_dict().items()
+            }
+            self.save_best_params()
+            self.logger.info(
+                "[OTI] Run finished. All intermediate results have been preserved."
+            )
+        else:
+
+            self.logger.info(
+                "[OTI] Best parameters were successfully saved during the run."
+            )
+
+    # Training and Loss Handling Methods
+    @override
     def train(self, epoch, list_of_train_idx):
         """
         Get the train index for each epoch.
@@ -155,12 +193,6 @@ class OTI(EarlyTrain):
         self.total_params_processed += len(batch_inds)
         self.current_step += 1
 
-    def save_best_params(self):
-        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
-        with open(best_params_path, "wb") as f:
-            pickle.dump(self.best_params, f)
-        self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
-
     @override
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
@@ -196,6 +228,12 @@ class OTI(EarlyTrain):
             epoch, self.current_step, self.current_batch_initial_params, loss.item()
         )
 
+    def save_best_params(self):
+        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
+        with open(best_params_path, "wb") as f:
+            pickle.dump(self.best_params, f)
+        self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
+
     def save_batch_info(self, epoch, batch_idx, initial_params, loss):
         batch_dir = os.path.join(
             self.args.save_path, f"epoch_{epoch}", f"batch_{batch_idx}"
@@ -213,32 +251,24 @@ class OTI(EarlyTrain):
         with open(os.path.join(batch_dir, "info.pkl"), "wb") as f:
             pickle.dump({"loss": loss, "lr": self.get_lr()}, f)
 
-    # def run(self):
-    #     result = super().run()
+        # def run(self):
+        #     result = super().run()
 
-    #     # Set up the scheduler after the optimizer is created in the parent's run method
-    #     if self.args.scheduler == "CosineAnnealingLR":
-    #         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #             self.model_optimizer, T_max=self.epochs
-    #         )
-    #     elif self.args.scheduler == "StepLR":
-    #         self.scheduler = torch.optim.lr_scheduler.StepLR(
-    #             self.model_optimizer, step_size=30, gamma=0.1
-    #         )
-    #     # Add more scheduler options as needed
+        #     # Set up the scheduler after the optimizer is created in the parent's run method
+        #     if self.args.scheduler == "CosineAnnealingLR":
+        #         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #             self.model_optimizer, T_max=self.epochs
+        #         )
+        #     elif self.args.scheduler == "StepLR":
+        #         self.scheduler = torch.optim.lr_scheduler.StepLR(
+        #             self.model_optimizer, step_size=30, gamma=0.1
+        #         )
+        #     # Add more scheduler options as needed
 
-    #     return result
+        #     return result
 
-    # def get_lr(self):
-    #     return self.model_optimizer.param_groups[0]["lr"]
-
-    @override
-    def after_epoch(self):
-        super().after_epoch()
-
-        current_lr = self.get_lr()
-        self.lr_history[self.current_epoch] = current_lr
-        self.logger.info(f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}")
+        # def get_lr(self):
+        #     return self.model_optimizer.param_groups[0]["lr"]
 
         if self.scheduler:
             self.scheduler.step()
@@ -270,6 +300,7 @@ class OTI(EarlyTrain):
         self.current_step = 0
         self.current_epoch += 1
 
+    # Parameter Retrieval Methods
     def get_params(self, epoch, step):
         """
         Retrieve parameters for a specific epoch and step.
@@ -361,6 +392,25 @@ class OTI(EarlyTrain):
         with open(file_path, "rb") as f:
             return pickle.load(f)
 
+    def load_best_params(self):
+        """
+        Load the best parameters from a file.
+
+        Returns:
+            dict: The best parameters loaded from the file.
+
+        Raises:
+            FileNotFoundError: If the best parameters file is not found.
+        """
+        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
+        if not os.path.exists(best_params_path):
+            raise FileNotFoundError(
+                f"[OTI] Best parameters file not found at {best_params_path}"
+            )
+        with open(best_params_path, "rb") as f:
+            return pickle.load(f)
+
+    # Score Calculation Methods
     def calculate_scores(
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
@@ -368,7 +418,9 @@ class OTI(EarlyTrain):
         try:
             best_params = self.load_best_params()
         except FileNotFoundError as e:
-            self.logger.info("[OTI] Using the current model parameters as the best parameters.")
+            self.logger.info(
+                "[OTI] Using the current model parameters as the best parameters."
+            )
             best_params = {
                 name: param.cpu().clone().detach()
                 for name, param in self.model.state_dict().items()
@@ -563,14 +615,7 @@ class OTI(EarlyTrain):
 
         return total_scores
 
-    def load_scores(self):
-        """Load pre-computed scores from file"""
-        scores_path = os.path.join(self.args.save_path, "oti_scores.pkl")
-        if not os.path.exists(scores_path):
-            raise FileNotFoundError(f"Pre-computed scores not found at {scores_path}")
-        with open(scores_path, "rb") as f:
-            return pickle.load(f)
-
+    # Learning Rate Methods
     def get_epoch_lr(self, epoch):
         """Retrieve the learning rate for a specific epoch"""
         epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
@@ -580,6 +625,15 @@ class OTI(EarlyTrain):
                 return epoch_data.get("learning_rate", 1.0)
         return 1.0
 
+    def load_scores(self):
+        """Load pre-computed scores from file"""
+        scores_path = os.path.join(self.args.save_path, "oti_scores.pkl")
+        if not os.path.exists(scores_path):
+            raise FileNotFoundError(f"Pre-computed scores not found at {scores_path}")
+        with open(scores_path, "rb") as f:
+            return pickle.load(f)
+
+    # main method
     @override
     def select(
         self,
@@ -619,44 +673,7 @@ class OTI(EarlyTrain):
 
         return {"indices": selected_indices, "scores": score_array}
 
-    @override
-    def finish_run(self):
-        """
-        Finish the run by saving the best parameters and preserving all intermediate results.
-
-        This method saves the best parameters to a separate file and keeps all the intermediate
-        epoch data files for further analysis or debugging purposes.
-        """
-        if self.best_params is None:
-            self.logger.warning("[OTI] Warning: No best parameters were saved during the run.")
-            self.best_params = {
-                name: param.cpu().clone().detach()
-                for name, param in self.model.state_dict().items()
-            }
-            self.save_best_params()
-            self.logger.info("[OTI] Run finished. All intermediate results have been preserved.")
-        else:
-
-            self.logger.info("[OTI] Best parameters were successfully saved during the run.")
-
-    def load_best_params(self):
-        """
-        Load the best parameters from a file.
-
-        Returns:
-            dict: The best parameters loaded from the file.
-
-        Raises:
-            FileNotFoundError: If the best parameters file is not found.
-        """
-        best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
-        if not os.path.exists(best_params_path):
-            raise FileNotFoundError(
-                f"[OTI] Best parameters file not found at {best_params_path}"
-            )
-        with open(best_params_path, "rb") as f:
-            return pickle.load(f)
-
+    # utility methods
     @staticmethod
     def verify_saved_lr(save_path, num_epochs):
         print("[OTI] Starting learning rate verification...")
