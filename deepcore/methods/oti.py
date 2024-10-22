@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 22nd October 2024 10:24:09 am
+# Last Modified: Tuesday, 22nd October 2024 11:26:39 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -120,6 +120,36 @@ class OTI(EarlyTrain):
         self.logger.info(
             f"[OTI] Epoch {self.current_epoch} finished. New LR: {current_lr}"
         )
+
+        if self.scheduler:
+            self.scheduler.step()
+
+        file_path = os.path.join(
+            self.args.save_path, f"epoch_{self.current_epoch}_data.pkl"
+        )
+
+        with open(file_path, "wb") as f:
+            pickle.dump(
+                {
+                    "parameters": self.current_epoch_parameters,
+                    "data_order": self.epoch_data_orders[self.current_epoch],
+                    "epoch_usage": (
+                        self.epoch_losses[-1] < self.epoch_losses[-2]
+                        if len(self.epoch_losses) > 1
+                        else True
+                    ),
+                    "learning_rate": current_lr,  # 只保存当前epoch的学习率
+                },
+                f,
+            )
+
+        self.logger.info(
+            f"[OTI] Parameters, data order, and learning rate saved for epoch {self.current_epoch}"
+        )
+
+        self.current_epoch_parameters = []
+        self.current_step = 0
+        self.current_epoch += 1
 
     @override
     def finish_run(self):
@@ -269,36 +299,6 @@ class OTI(EarlyTrain):
 
         # def get_lr(self):
         #     return self.model_optimizer.param_groups[0]["lr"]
-
-        if self.scheduler:
-            self.scheduler.step()
-
-        file_path = os.path.join(
-            self.args.save_path, f"epoch_{self.current_epoch}_data.pkl"
-        )
-
-        with open(file_path, "wb") as f:
-            pickle.dump(
-                {
-                    "parameters": self.current_epoch_parameters,
-                    "data_order": self.epoch_data_orders[self.current_epoch],
-                    "epoch_usage": (
-                        self.epoch_losses[-1] < self.epoch_losses[-2]
-                        if len(self.epoch_losses) > 1
-                        else True
-                    ),
-                    "learning_rate": current_lr,  # 只保存当前epoch的学习率
-                },
-                f,
-            )
-
-        self.logger.info(
-            f"[OTI] Parameters, data order, and learning rate saved for epoch {self.current_epoch}"
-        )
-
-        self.current_epoch_parameters = []
-        self.current_step = 0
-        self.current_epoch += 1
 
     # Parameter Retrieval Methods
     def get_params(self, epoch, step):
