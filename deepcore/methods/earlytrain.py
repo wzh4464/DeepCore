@@ -418,7 +418,7 @@ class EarlyTrain(CoresetMethod):
             batch_idx: Current batch index.
             batch_size: Size of the current batch.
         """
-        self.logger.info(
+        self.logger.debug(
             f"while_update({outputs}, {loss}, {targets}, {epoch}, {batch_idx}, {batch_size})"
         )
 

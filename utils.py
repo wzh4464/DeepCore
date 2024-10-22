@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 21st October 2024 4:00:51 pm
+# Last Modified: Tuesday, 22nd October 2024 11:41:59 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -16,7 +16,9 @@ from argparse import ArgumentTypeError
 from prefetch_generator import BackgroundGenerator
 from datetime import datetime
 import os
+import sys
 import logging
+import traceback
 
 
 class WeightedSubset(torch.utils.data.Subset):
@@ -255,27 +257,65 @@ class DataLoaderX(torch.utils.data.DataLoader):
 
 
 def setup_logging(log_dir="logs", log_level=logging.INFO):
+    """
+    Setup logging configuration with exception handling
+    
+    Args:
+        log_dir (str): Directory to store log files
+        log_level: Logging level
+        
+    Returns:
+        logger: Configured logger instance
+    """
     # 确保日志目录存在
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-
+    
     # 生成唯一的日志文件名
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"run_{timestamp}.log")
-
+    
     # 配置根日志记录器
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        filename=log_file,
-        filemode="w",
+        handlers=[
+            # 文件处理器
+            logging.FileHandler(log_file, mode='w', encoding='utf-8'),
+            # 控制台处理器
+            logging.StreamHandler(sys.stdout)
+        ]
     )
+    
+    # 设置全局异常处理器
+    sys.excepthook = handle_exception
+    
+    # 创建并配置logger
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging setup completed. Log file: {log_file}")
+    
+    return logger
 
-    # 添加控制台处理器
-    console = logging.StreamHandler()
-    console.setLevel(log_level)
-    formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s")
-    console.setFormatter(formatter)
-    logging.getLogger("").addHandler(console)
 
-    return logging.getLogger(__name__)
+def handle_exception(exc_type, exc_value, exc_traceback):
+    """
+    Global exception handler to log unhandled exceptions
+
+    Args:
+        exc_type: Type of the exception
+        exc_value: Exception instance
+        exc_traceback: Traceback object
+    """
+    # 忽略 KeyboardInterrupt 导致的异常
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    # 获取logger
+    logger = logging.getLogger("ExceptionLogger")
+
+    # 创建格式化的错误消息
+    error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+
+    # 记录异常
+    logger.critical(f"Uncaught exception:\n{error_msg}")

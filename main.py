@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 21st October 2024 5:01:17 pm
+# Last Modified: Tuesday, 22nd October 2024 11:43:31 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -834,8 +834,7 @@ def main():
     Returns:
         None
     """
-    logger = setup_logging()
-    logger.info("Starting the main function")
+    logger = logging.getLogger(__name__)
 
     args = parse_args()
     logger.info(f"Parsed arguments: {args}")
@@ -851,4 +850,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    logger = setup_logging()
+    logger.info("Starting the main function")
+    try:
+        main()
+    except Exception as e:
+        logger.exception("Caught an exception:")
+        raise

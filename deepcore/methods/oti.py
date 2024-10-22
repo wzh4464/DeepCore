@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 22nd October 2024 11:26:39 am
+# Last Modified: Tuesday, 22nd October 2024 3:58:05 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -192,26 +192,39 @@ class OTI(EarlyTrain):
     @override
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
         """
-        Perform operations after loss calculation, including generating and saving pseudo parameters.
+        Save model parameters and gradients after loss computation but before optimization step.
+        This is the ideal point to capture the model's state and gradients.
         """
         super().after_loss(outputs, loss, targets, batch_inds, epoch)
+        
+        # Create batch directory
+        batch_dir = os.path.join(
+            self.args.save_path, f"epoch_{epoch}", f"batch_{self.current_step}"
+        )
+        os.makedirs(batch_dir, exist_ok=True)
 
-        # Generate pseudo update parameters for each data point in the batch (on CPU)
-        with torch.no_grad():
-            self.pseudo_params_list = []
-            for data_idx in batch_inds:
-                pseudo_params = {
-                    name: (param - self.args.selection_lr * param.grad).cpu()
-                    for name, param in self.model.named_parameters()
-                    if param.grad is not None
-                }
-                self.pseudo_params_list.append(
-                    {"data_idx": data_idx, "params": pseudo_params}
-                )
+        # Save current model parameters, gradients, and batch information
+        step_data = {
+            "parameters": {
+                name: param.cpu().clone().detach()
+                for name, param in self.model.named_parameters()
+            },
+            "gradients": {
+                name: param.grad.cpu().clone().detach() if param.grad is not None else None
+                for name, param in self.model.named_parameters()
+            },
+            "batch_indices": batch_inds,
+            "loss": loss.item(),
+            "learning_rate": self.get_lr()  # 添加当前学习率信息
+        }
+        
+        # Save step data
+        with open(os.path.join(batch_dir, "step_data.pkl"), "wb") as f:
+            pickle.dump(step_data, f)
 
-        # Check if this is the best loss so far
+        # Update best parameters if needed
         current_loss = loss.mean().item()
-        if current_loss < getattr(self, "best_loss", float("inf")):
+        if current_loss < self.best_loss:
             self.best_loss = current_loss
             self.best_params = {
                 name: param.cpu().clone().detach()
@@ -219,44 +232,28 @@ class OTI(EarlyTrain):
             }
             self.save_best_params()
 
-        # Update counters
+        # Print progress at appropriate intervals
+        if self.current_step % self.args.print_freq == 0:
+            self.logger.info(
+                f"| Epoch [{epoch}/{self.epochs}] Step [{self.current_step}] Loss: {loss.item():.4f}"
+            )
+
         self.total_params_processed += len(batch_inds)
         self.current_step += 1
 
     @override
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
         """
-        Perform actions during the update step, including saving model parameters
-        and calculating pseudo parameters for each data point.
-
-        Save:
-            - Initial parameters (`initial_params.pt`)
-            - Pseudo parameters for each data point (`pseudo_params.pkl`)
-
-        Args:
-            outputs: Model outputs.
-            loss: Computed loss.
-            targets: Ground truth labels.
-            epoch: Current epoch number.
-            batch_idx: Current batch index.
-            batch_size: Size of the current batch.
+        Perform minimal logging during the update step.
+        All parameter saving is handled in after_loss.
         """
-        # Print progress
+        super().while_update(outputs, loss, targets, epoch, batch_idx, batch_size)
+        
+        # Only handle progress logging
         if batch_idx % self.args.print_freq == 0:
-            self.logger.info(
+            self.logger.debug(
                 f"| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
             )
-            self.logger.info("[OTI] Saving model parameters...")
-
-        # Save the initial parameters of the batch (on CPU)
-        self.current_batch_initial_params = {
-            name: param.clone().detach().cpu()
-            for name, param in self.model.named_parameters()
-        }
-        # Save batch information to disk
-        self.save_batch_info(
-            epoch, self.current_step, self.current_batch_initial_params, loss.item()
-        )
 
     def save_best_params(self):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
@@ -417,7 +414,7 @@ class OTI(EarlyTrain):
         """Calculate scores using single or multiple GPUs"""
         try:
             best_params = self.load_best_params()
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             self.logger.info(
                 "[OTI] Using the current model parameters as the best parameters."
             )
@@ -428,47 +425,73 @@ class OTI(EarlyTrain):
 
         if self.num_gpus <= 1:
             return self.single_gpu_calculate_scores(
-                best_params, use_regularization, use_learning_rate, use_sliding_window
+                best_params,
+                use_regularization,
+                use_learning_rate,
+                # use_sliding_window
             )
         else:
             return self.multi_gpu_calculate_scores(
-                best_params, use_regularization, use_learning_rate, use_sliding_window
+                best_params,
+                use_regularization,
+                use_learning_rate,
+                # use_sliding_window
             )
 
-    def calculate_l2_distance(self, params1, params2, device, use_regularization):
+    def calculate_l2_distance(self, params1, params2, device):
         """Calculate L2 distance between two parameter sets"""
-        if use_regularization:
-            return sum(
-                (
-                    torch.norm(params1[name].to(device) - params2[name].to(device))
-                    / torch.norm(params1[name].to(device))
-                ).item()
-                for name in params1
-                if name in params2
-            )
-        else:
-            return sum(
-                torch.norm(params1[name].to(device) - params2[name].to(device)).item()
-                for name in params1
-                if name in params2
-            )
+        return sum(
+            torch.norm(params1[name].to(device) - params2[name].to(device)).item()
+            for name in params1
+            if name in params2
+        )
 
-    def gpu_worker(
+    def calculate_pseudo_params(self, params, grads, learning_rate):
+        """Calculate pseudo parameters for a given set of parameters and gradients."""
+        return {
+            name: params[name] - learning_rate * grads[name]
+            for name, grad in grads.items()
+            if grad is not None
+        }
+
+    def calculate_scores_on_device(
         self,
-        gpu_id,
-        epochs,
-        return_dict,
+        device_id,
+        epochs_to_process,
         best_params,
-        use_regularization,
-        use_learning_rate,
-        use_sliding_window,
+        use_regularization=False,
+        use_learning_rate=True,
+        return_dict=None,
     ):
-        torch.cuda.set_device(gpu_id)
-        device = torch.device(f"cuda:{gpu_id}")
+        """
+        Calculate scores using specified device (GPU or CPU).
+
+        Args:
+            device_id: Device ID to use (-1 for CPU, >=0 for GPU)
+            epochs_to_process: List of epochs to process on this device
+            best_params: Best model parameters to compare against
+            use_regularization: Whether to use regularization in distance calculation
+            use_learning_rate: Whether to scale scores by learning rate
+            return_dict: Optional multiprocessing manager dict for multi-GPU mode
+
+        Returns:
+            Dictionary of scores if single GPU/CPU mode, None if multi-GPU mode
+        """
+        
+        logger = logging.getLogger(__name__)
+        logger.info(f"[OTI] Processing epochs {epochs_to_process} on device {device_id}")
+        
+        # Set up device
+        if device_id >= 0:  # GPU mode
+            torch.cuda.set_device(device_id)
+            device = torch.device(f"cuda:{device_id}")
+        else:  # CPU mode
+            device = torch.device("cpu")
 
         local_scores = {}
 
-        for epoch in epochs:
+        # Process each epoch
+        for epoch in epochs_to_process:
             epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
             batch_dirs = sorted(
                 [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
@@ -476,130 +499,181 @@ class OTI(EarlyTrain):
 
             epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
 
-            for batch_dir in tqdm(
-                batch_dirs, desc=f"GPU {gpu_id} processing epoch {epoch}"
-            ):
+            # Process each batch
+            desc = (
+                f"GPU {device_id} processing epoch {epoch}"
+                if device_id >= 0
+                else f"Processing epoch {epoch}"
+            )
+            for batch_dir in tqdm(batch_dirs, desc=desc):
                 batch_path = os.path.join(epoch_dir, batch_dir)
 
-                initial_params = torch.load(
-                    os.path.join(batch_path, "initial_params.pt"), map_location=device
+                # Load step data
+                with open(os.path.join(batch_path, "step_data.pkl"), "rb") as f:
+                    step_data = pickle.load(f)
+
+                # Move data to device
+                current_params = {
+                    k: v.to(device) for k, v in step_data["parameters"].items()
+                }
+                current_grads = {
+                    k: v.to(device) if v is not None else None
+                    for k, v in step_data["gradients"].items()
+                }
+
+                # Calculate pseudo parameters
+                pseudo_params = self.calculate_pseudo_params(
+                    current_params, current_grads, epoch_lr
                 )
+
+                # Calculate distances
                 initial_distance = self.calculate_l2_distance(
-                    initial_params, best_params, device, use_regularization
+                    current_params, best_params, device
+                )
+                pseudo_distance = self.calculate_l2_distance(
+                    pseudo_params, best_params, device
                 )
 
-                with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
-                    pseudo_params_list = pickle.load(f)
+                # Update scores for each sample in the batch
+                for idx in step_data["batch_indices"]:
+                    
+                    score = (initial_distance - pseudo_distance) / initial_distance if use_regularization else initial_distance - pseudo_distance
 
-                for pseudo_param in pseudo_params_list:
-                    data_idx = pseudo_param["data_idx"]
-                    pseudo_params = {
-                        k: v.to(device) for k, v in pseudo_param["params"].items()
-                    }
-                    pseudo_distance = self.calculate_l2_distance(
-                        pseudo_params, best_params, device, use_regularization
-                    )
+                    if idx not in local_scores:
+                        local_scores[idx] = score
+                    else:
+                        local_scores[idx] += score
 
+                torch.cuda.empty_cache()
+
+        # Handle return based on mode
+        if return_dict is not None:  # Multi-GPU mode
+            return_dict[device_id] = local_scores
+        else:  # Single GPU/CPU mode
+            return local_scores
+
+    # if the bottleneck is i/o, we can load all data into memory at once
+    """
+    def calculate_scores_on_device(
+        self,
+        device_id,
+        epochs_to_process,
+        best_params,
+        use_regularization=False,
+        use_learning_rate=True,
+        return_dict=None,
+    ):
+        if device_id >= 0:
+            torch.cuda.set_device(device_id)
+            device = torch.device(f"cuda:{device_id}")
+        else:
+            device = torch.device("cpu")
+
+        local_scores = {}
+
+        for epoch in epochs_to_process:
+            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
+            batch_dirs = sorted(
+                [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
+            )
+
+            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
+
+            # 一次性加载该epoch的所有批次数据
+            batch_data = {}
+            for batch_dir in batch_dirs:
+                batch_path = os.path.join(epoch_dir, batch_dir)
+                with open(os.path.join(batch_path, "step_data.pkl"), "rb") as f:
+                    batch_data[batch_dir] = pickle.load(f)
+
+            # 每个epoch只将数据传输到设备一次
+            for batch_dir, step_data in batch_data.items():
+                current_params = {
+                    k: v.to(device) for k, v in step_data["parameters"].items()
+                }
+                current_grads = {
+                    k: v.to(device) if v is not None else None
+                    for k, v in step_data["gradients"].items()
+                }
+
+                pseudo_params = self.calculate_pseudo_params(
+                    current_params, current_grads, self.args.selection_lr
+                )
+
+                initial_distance = self.calculate_l2_distance(
+                    current_params, best_params, device, use_regularization
+                )
+                pseudo_distance = self.calculate_l2_distance(
+                    pseudo_params, best_params, device, use_regularization
+                )
+
+                for idx in step_data["batch_indices"]:
                     score = initial_distance - pseudo_distance
                     if use_learning_rate:
                         score *= epoch_lr
 
-                    if data_idx not in local_scores:
-                        local_scores[data_idx] = score
+                    if idx not in local_scores:
+                        local_scores[idx] = score
                     else:
-                        local_scores[data_idx] += score
+                        local_scores[idx] += score
 
-                torch.cuda.empty_cache()
-
-        return_dict[gpu_id] = local_scores
+        if return_dict is not None:
+            return_dict[device_id] = local_scores
+        else:
+            return local_scores
+        """
 
     def single_gpu_calculate_scores(
-        self, best_params, use_regularization, use_learning_rate, use_sliding_window
+        self, best_params, use_regularization=False, use_learning_rate=True
     ):
-        """Calculate scores using a single GPU"""
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-        total_scores = {}
-
-        for epoch in range(self.epochs):
-            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
-            batch_dirs = sorted(
-                [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
-            )
-
-            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
-
-            for batch_dir in tqdm(batch_dirs, desc=f"Processing epoch {epoch}"):
-                batch_path = os.path.join(epoch_dir, batch_dir)
-
-                initial_params = torch.load(
-                    os.path.join(batch_path, "initial_params.pt"), map_location=device
-                )
-                initial_distance = self.calculate_l2_distance(
-                    initial_params, best_params, device, use_regularization
-                )
-
-                with open(os.path.join(batch_path, "pseudo_params.pkl"), "rb") as f:
-                    pseudo_params_list = pickle.load(f)
-
-                for pseudo_param in pseudo_params_list:
-                    data_idx = pseudo_param["data_idx"]
-                    pseudo_params = {
-                        k: v.to(device) for k, v in pseudo_param["params"].items()
-                    }
-                    pseudo_distance = self.calculate_l2_distance(
-                        pseudo_params, best_params, device, use_regularization
-                    )
-
-                    score = initial_distance - pseudo_distance
-                    if use_learning_rate:
-                        score *= epoch_lr
-
-                    if data_idx not in total_scores:
-                        total_scores[data_idx] = score
-                    else:
-                        total_scores[data_idx] += score
-
-                torch.cuda.empty_cache()
-
-        if use_sliding_window:
-            self.logger.warning("[OTI] Warning: Sliding window not yet implemented.")
-
-        return total_scores
+        """Calculate scores using single GPU or CPU"""
+        device_id = 0 if torch.cuda.is_available() else -1
+        return self.calculate_scores_on_device(
+            device_id,
+            range(self.epochs),
+            best_params,
+            use_regularization,
+            use_learning_rate,
+        )
 
     def multi_gpu_calculate_scores(
-        self, best_params, use_regularization, use_learning_rate, use_sliding_window
+        self, best_params, use_regularization=False, use_learning_rate=True
     ):
         """Calculate scores using multiple GPUs"""
+        logger = logging.getLogger(__name__)
+        logger.info(f"[OTI] Starting multi-GPU score calculation on {self.num_gpus} GPUs")
+        
         mp.set_start_method("spawn", force=True)
-
         manager = mp.Manager()
         return_dict = manager.dict()
 
+        # Split epochs among GPUs
         epochs_per_gpu = [
             list(range(i, self.epochs, self.num_gpus)) for i in range(self.num_gpus)
         ]
 
+        # Start processes for each GPU
         processes = []
         for gpu_id in range(self.num_gpus):
             p = mp.Process(
-                target=self.gpu_worker,
+                target=self.calculate_scores_on_device,
                 args=(
                     gpu_id,
                     epochs_per_gpu[gpu_id],
-                    return_dict,
                     best_params,
                     use_regularization,
                     use_learning_rate,
-                    use_sliding_window,
+                    return_dict,
                 ),
             )
             processes.append(p)
             p.start()
 
+        # Wait for all processes to complete
         for p in processes:
             p.join()
 
+        # Combine results from all GPUs
         total_scores = {}
         for gpu_scores in return_dict.values():
             for idx, score in gpu_scores.items():
@@ -607,11 +681,6 @@ class OTI(EarlyTrain):
                     total_scores[idx] = score
                 else:
                     total_scores[idx] += score
-
-        if use_sliding_window:
-            self.logger.warning(
-                "[OTI] Warning: Sliding window not yet implemented for multi-GPU calculation."
-            )
 
         return total_scores
 
@@ -670,6 +739,10 @@ class OTI(EarlyTrain):
         # Select top-k samples based on the scores
         top_k = self.coreset_size
         selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
+
+        logger = logging.getLogger(__name__)
+        logger.info(f"[OTI] Selected {top_k} samples based on scores.")
+        logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
 
         return {"indices": selected_indices, "scores": score_array}
 
