@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 22nd October 2024 11:43:31 am
+# Last Modified: Monday, 4th November 2024 9:26:21 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -382,10 +382,10 @@ def load_checkpoint(args):
 
 
 def initialize_dataset_and_model(args, checkpoint):
-    """Initialize the dataset and model for training."""
-
+    """Initialize the dataset and model for training, including data loaders for training and testing."""
     logger = logging.getLogger(__name__)
 
+    # Load dataset and basic dataset properties
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
         datasets.__dict__[args.dataset](args.data_path)
     )
@@ -398,6 +398,7 @@ def initialize_dataset_and_model(args, checkpoint):
 
     torch.random.manual_seed(args.seed)
 
+    # Configure selection method and subset (if applicable)
     if "subset" in checkpoint.keys():
         subset = checkpoint["subset"]
         selection_args = checkpoint["sel_args"]
@@ -409,20 +410,14 @@ def initialize_dataset_and_model(args, checkpoint):
             greedy=args.submodular_greedy,
             function=args.submodular,
         )
-        # get the selection method class
-        try:
-            method_class: Type[CoresetMethod] = SELECTION_METHODS.get(args.selection)
-            if method_class is None:
-                raise ValueError(
-                    f"Selection method {args.selection} not found. Available methods: {SELECTION_METHODS.keys()}"
-                )
-        except Exception as e:
-            logger.error(f"An error occurred while selecting the method: {e}")
-            raise e
 
-        # run selection method
+        method_class = SELECTION_METHODS.get(args.selection)
+        if method_class is None:
+            raise ValueError(f"Selection method {args.selection} not found.")
+
+        # Initialize selection method with specific OTI options if selected
         if args.selection == "OTI":
-            method: CoresetMethod = method_class(
+            method = method_class(
                 dst_train,
                 args,
                 args.fraction,
@@ -432,25 +427,28 @@ def initialize_dataset_and_model(args, checkpoint):
                 use_regularization=args.oti_use_regularization,
                 use_learning_rate=args.oti_use_learning_rate,
                 use_sliding_window=args.oti_use_sliding_window,
+                dst_test=dst_test,
                 **selection_args,
             )
         else:
-            method: CoresetMethod = method_class(
+            method = method_class(
                 dst_train, args, args.fraction, args.seed, **selection_args
             )
 
         subset = method.select()
 
+    # Define data augmentation and preprocessing
     if args.dataset in ["CIFAR10", "CIFAR100"]:
-        dst_train.transform = transforms.Compose(
+        transform_train = transforms.Compose(
             [
                 transforms.RandomCrop(args.im_size, padding=4, padding_mode="reflect"),
                 transforms.RandomHorizontalFlip(),
-                dst_train.transform,
+                transforms.ToTensor(),
+                transforms.Normalize(mean, std),
             ]
         )
     elif args.dataset == "ImageNet":
-        dst_train.transform = transforms.Compose(
+        transform_train = transforms.Compose(
             [
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
@@ -458,7 +456,15 @@ def initialize_dataset_and_model(args, checkpoint):
                 transforms.Normalize(mean, std),
             ]
         )
+    else:
+        transform_train = transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize(mean, std)]
+        )
 
+    # Apply transforms to training dataset
+    dst_train.transform = transform_train
+
+    # Create subset if necessary (e.g., for OTI)
     if_weighted = "weights" in subset.keys()
     dst_subset = (
         WeightedSubset(dst_train, subset["indices"], subset["weights"])
@@ -466,55 +472,27 @@ def initialize_dataset_and_model(args, checkpoint):
         else torch.utils.data.Subset(dst_train, subset["indices"])
     )
 
-    train_loader = (
-        DataLoaderX(
-            dst_subset,
-            batch_size=args.train_batch,
-            shuffle=True,
-            num_workers=args.workers,
-            pin_memory=True,
-        )
-        if args.dataset == "ImageNet"
-        else torch.utils.data.DataLoader(
-            dst_subset,
-            batch_size=args.train_batch,
-            shuffle=True,
-            num_workers=args.workers,
-            pin_memory=True,
-        )
-    )
-    test_loader = (
-        DataLoaderX(
-            dst_test,
-            batch_size=args.train_batch,
-            shuffle=False,
-            num_workers=args.workers,
-            pin_memory=True,
-        )
-        if args.dataset == "ImageNet"
-        else torch.utils.data.DataLoader(
-            dst_test,
-            batch_size=args.train_batch,
-            shuffle=False,
-            num_workers=args.workers,
-            pin_memory=True,
-        )
+    # Configure DataLoaders
+    train_loader = torch.utils.data.DataLoader(
+        dst_subset,
+        batch_size=(
+            args.train_batch
+        ),
+        shuffle=True,
+        num_workers=args.workers,
+        pin_memory=True,
     )
 
-    if args.selection == "OTI":
-        method = method_class(
-            dst_train,
-            args,
-            args.fraction,
-            args.seed,
-            num_gpus=args.num_gpus,
-            mode=args.oti_mode,
-            **selection_args,
-        )
-    else:
-        method = method_class(
-            dst_train, args, args.fraction, args.seed, **selection_args
-        )
+    test_loader = torch.utils.data.DataLoader(
+        dst_test,
+        batch_size=args.train_batch,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
+    )
+
+    logger.info(f"train_loader_len: {len(train_loader)}")
+    logger.info(f"test_loader_len: {len(test_loader)}")
 
     return train_loader, test_loader, if_weighted, subset, selection_args
 

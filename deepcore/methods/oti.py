@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 22nd October 2024 3:58:05 pm
+# Last Modified: Wednesday, 6th November 2024 5:01:50 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -26,6 +26,12 @@ import torch.multiprocessing as mp
 from tqdm import tqdm
 import logging
 from typing import override
+import pandas as pd
+
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+from utils import setup_logging
 
 
 class OTI(EarlyTrain):
@@ -94,22 +100,21 @@ class OTI(EarlyTrain):
 
     @override
     def before_run(self):
-        """
-        Perform actions before the entire run starts.
-        This method is called at the beginning of the `run` method.
-        """
+        """运行前初始化"""
         super().before_run()
-        # Store initial parameters
+        # 存储初始参数
         self.initial_params = {
             name: param.cpu().clone().detach()
             for name, param in self.model.state_dict().items()
         }
-
-        # Save initial parameters
-        initial_params_path = os.path.join(self.args.save_path, "initial_params.pkl")
-        with open(initial_params_path, "wb") as f:
-            pickle.dump(self.initial_params, f)
-        self.logger.info(f"[OTI] Initial parameters saved to {initial_params_path}")
+        # 保存为单个文件
+        torch.save(
+            self.initial_params,
+            os.path.join(self.args.save_path, "initial_params.pt"),  # 使用.pt而不是.pkl
+        )
+        self.logger.info(
+            f"[OTI] Initial parameters saved to {self.args.save_path}/initial_params.pt"
+        )
 
     @override
     def after_epoch(self):
@@ -191,38 +196,9 @@ class OTI(EarlyTrain):
 
     @override
     def after_loss(self, outputs, loss, targets, batch_inds, epoch):
-        """
-        Save model parameters and gradients after loss computation but before optimization step.
-        This is the ideal point to capture the model's state and gradients.
-        """
+        """Update best parameters after each epoch"""
         super().after_loss(outputs, loss, targets, batch_inds, epoch)
-        
-        # Create batch directory
-        batch_dir = os.path.join(
-            self.args.save_path, f"epoch_{epoch}", f"batch_{self.current_step}"
-        )
-        os.makedirs(batch_dir, exist_ok=True)
 
-        # Save current model parameters, gradients, and batch information
-        step_data = {
-            "parameters": {
-                name: param.cpu().clone().detach()
-                for name, param in self.model.named_parameters()
-            },
-            "gradients": {
-                name: param.grad.cpu().clone().detach() if param.grad is not None else None
-                for name, param in self.model.named_parameters()
-            },
-            "batch_indices": batch_inds,
-            "loss": loss.item(),
-            "learning_rate": self.get_lr()  # 添加当前学习率信息
-        }
-        
-        # Save step data
-        with open(os.path.join(batch_dir, "step_data.pkl"), "wb") as f:
-            pickle.dump(step_data, f)
-
-        # Update best parameters if needed
         current_loss = loss.mean().item()
         if current_loss < self.best_loss:
             self.best_loss = current_loss
@@ -235,7 +211,7 @@ class OTI(EarlyTrain):
         # Print progress at appropriate intervals
         if self.current_step % self.args.print_freq == 0:
             self.logger.info(
-                f"| Epoch [{epoch}/{self.epochs}] Step [{self.current_step}] Loss: {loss.item():.4f}"
+                f"|Training First Round| Epoch [{epoch}/{self.epochs}] Step [{self.current_step}/{(self.n_train // self.args.selection_batch)+1}]\t\tLoss: {current_loss:.4f}"
             )
 
         self.total_params_processed += len(batch_inds)
@@ -248,18 +224,18 @@ class OTI(EarlyTrain):
         All parameter saving is handled in after_loss.
         """
         super().while_update(outputs, loss, targets, epoch, batch_idx, batch_size)
-        
+
         # Only handle progress logging
         if batch_idx % self.args.print_freq == 0:
             self.logger.debug(
-                f"| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
+                f"|Training First Round| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
             )
 
     def save_best_params(self):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
         with open(best_params_path, "wb") as f:
             pickle.dump(self.best_params, f)
-        self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
+        # self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
 
     def save_batch_info(self, epoch, batch_idx, initial_params, loss):
         batch_dir = os.path.join(
@@ -269,33 +245,6 @@ class OTI(EarlyTrain):
 
         # Save initial parameters
         torch.save(initial_params, os.path.join(batch_dir, "initial_params.pt"))
-
-        # Save the pseudo parameter list
-        with open(os.path.join(batch_dir, "pseudo_params.pkl"), "wb") as f:
-            pickle.dump(self.pseudo_params_list, f)
-
-        # Save other information
-        with open(os.path.join(batch_dir, "info.pkl"), "wb") as f:
-            pickle.dump({"loss": loss, "lr": self.get_lr()}, f)
-
-        # def run(self):
-        #     result = super().run()
-
-        #     # Set up the scheduler after the optimizer is created in the parent's run method
-        #     if self.args.scheduler == "CosineAnnealingLR":
-        #         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #             self.model_optimizer, T_max=self.epochs
-        #         )
-        #     elif self.args.scheduler == "StepLR":
-        #         self.scheduler = torch.optim.lr_scheduler.StepLR(
-        #             self.model_optimizer, step_size=30, gamma=0.1
-        #         )
-        #     # Add more scheduler options as needed
-
-        #     return result
-
-        # def get_lr(self):
-        #     return self.model_optimizer.param_groups[0]["lr"]
 
     # Parameter Retrieval Methods
     def get_params(self, epoch, step):
@@ -411,28 +360,37 @@ class OTI(EarlyTrain):
     def calculate_scores(
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
-        """Calculate scores using single or multiple GPUs"""
+        """
+        Calculate scores by training in real-time and comparing parameters with best_params.
+        """
         try:
             best_params = self.load_best_params()
         except FileNotFoundError:
             self.logger.info(
                 "[OTI] Using the current model parameters as the best parameters."
             )
-            best_params = {
-                name: param.cpu().clone().detach()
-                for name, param in self.model.state_dict().items()
-            }
+            best_params = torch.load(
+                os.path.join(self.args.save_path, "best_params.pkl")
+            )
+
+        init_params = torch.load(os.path.join(self.args.save_path, "initial_params.pt"))
 
         if self.num_gpus <= 1:
+            self.logger.info("[OTI] Using single GPU for score calculation")
+            device_id = self.args.gpu[0]
             return self.single_gpu_calculate_scores(
                 best_params,
+                init_params,
+                device_id,
                 use_regularization,
                 use_learning_rate,
                 # use_sliding_window
             )
         else:
+            self.logger.info("[OTI] Using multiple GPUs for score calculation")
             return self.multi_gpu_calculate_scores(
                 best_params,
+                init_params,
                 use_regularization,
                 use_learning_rate,
                 # use_sliding_window
@@ -454,245 +412,277 @@ class OTI(EarlyTrain):
             if grad is not None
         }
 
-    def calculate_scores_on_device(
-        self,
-        device_id,
-        epochs_to_process,
-        best_params,
-        use_regularization=False,
-        use_learning_rate=True,
-        return_dict=None,
-    ):
-        """
-        Calculate scores using specified device (GPU or CPU).
-
-        Args:
-            device_id: Device ID to use (-1 for CPU, >=0 for GPU)
-            epochs_to_process: List of epochs to process on this device
-            best_params: Best model parameters to compare against
-            use_regularization: Whether to use regularization in distance calculation
-            use_learning_rate: Whether to scale scores by learning rate
-            return_dict: Optional multiprocessing manager dict for multi-GPU mode
-
-        Returns:
-            Dictionary of scores if single GPU/CPU mode, None if multi-GPU mode
-        """
-        
-        logger = logging.getLogger(__name__)
-        logger.info(f"[OTI] Processing epochs {epochs_to_process} on device {device_id}")
-        
-        # Set up device
-        if device_id >= 0:  # GPU mode
-            torch.cuda.set_device(device_id)
-            device = torch.device(f"cuda:{device_id}")
-        else:  # CPU mode
-            device = torch.device("cpu")
-
-        local_scores = {}
-
-        # Process each epoch
-        for epoch in epochs_to_process:
-            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
-            batch_dirs = sorted(
-                [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
-            )
-
-            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
-
-            # Process each batch
-            desc = (
-                f"GPU {device_id} processing epoch {epoch}"
-                if device_id >= 0
-                else f"Processing epoch {epoch}"
-            )
-            for batch_dir in tqdm(batch_dirs, desc=desc):
-                batch_path = os.path.join(epoch_dir, batch_dir)
-
-                # Load step data
-                with open(os.path.join(batch_path, "step_data.pkl"), "rb") as f:
-                    step_data = pickle.load(f)
-
-                # Move data to device
-                current_params = {
-                    k: v.to(device) for k, v in step_data["parameters"].items()
-                }
-                current_grads = {
-                    k: v.to(device) if v is not None else None
-                    for k, v in step_data["gradients"].items()
-                }
-
-                # Calculate pseudo parameters
-                pseudo_params = self.calculate_pseudo_params(
-                    current_params, current_grads, epoch_lr
-                )
-
-                # Calculate distances
-                initial_distance = self.calculate_l2_distance(
-                    current_params, best_params, device
-                )
-                pseudo_distance = self.calculate_l2_distance(
-                    pseudo_params, best_params, device
-                )
-
-                # Update scores for each sample in the batch
-                for idx in step_data["batch_indices"]:
-                    
-                    score = (initial_distance - pseudo_distance) / initial_distance if use_regularization else initial_distance - pseudo_distance
-
-                    if idx not in local_scores:
-                        local_scores[idx] = score
-                    else:
-                        local_scores[idx] += score
-
-                torch.cuda.empty_cache()
-
-        # Handle return based on mode
-        if return_dict is not None:  # Multi-GPU mode
-            return_dict[device_id] = local_scores
-        else:  # Single GPU/CPU mode
-            return local_scores
-
-    # if the bottleneck is i/o, we can load all data into memory at once
-    """
-    def calculate_scores_on_device(
-        self,
-        device_id,
-        epochs_to_process,
-        best_params,
-        use_regularization=False,
-        use_learning_rate=True,
-        return_dict=None,
-    ):
-        if device_id >= 0:
-            torch.cuda.set_device(device_id)
-            device = torch.device(f"cuda:{device_id}")
-        else:
-            device = torch.device("cpu")
-
-        local_scores = {}
-
-        for epoch in epochs_to_process:
-            epoch_dir = os.path.join(self.args.save_path, f"epoch_{epoch}")
-            batch_dirs = sorted(
-                [d for d in os.listdir(epoch_dir) if d.startswith("batch_")]
-            )
-
-            epoch_lr = self.get_epoch_lr(epoch) if use_learning_rate else 1.0
-
-            # 一次性加载该epoch的所有批次数据
-            batch_data = {}
-            for batch_dir in batch_dirs:
-                batch_path = os.path.join(epoch_dir, batch_dir)
-                with open(os.path.join(batch_path, "step_data.pkl"), "rb") as f:
-                    batch_data[batch_dir] = pickle.load(f)
-
-            # 每个epoch只将数据传输到设备一次
-            for batch_dir, step_data in batch_data.items():
-                current_params = {
-                    k: v.to(device) for k, v in step_data["parameters"].items()
-                }
-                current_grads = {
-                    k: v.to(device) if v is not None else None
-                    for k, v in step_data["gradients"].items()
-                }
-
-                pseudo_params = self.calculate_pseudo_params(
-                    current_params, current_grads, self.args.selection_lr
-                )
-
-                initial_distance = self.calculate_l2_distance(
-                    current_params, best_params, device, use_regularization
-                )
-                pseudo_distance = self.calculate_l2_distance(
-                    pseudo_params, best_params, device, use_regularization
-                )
-
-                for idx in step_data["batch_indices"]:
-                    score = initial_distance - pseudo_distance
-                    if use_learning_rate:
-                        score *= epoch_lr
-
-                    if idx not in local_scores:
-                        local_scores[idx] = score
-                    else:
-                        local_scores[idx] += score
-
-        if return_dict is not None:
-            return_dict[device_id] = local_scores
-        else:
-            return local_scores
-        """
-
-    def single_gpu_calculate_scores(
-        self, best_params, use_regularization=False, use_learning_rate=True
-    ):
-        """Calculate scores using single GPU or CPU"""
-        device_id = 0 if torch.cuda.is_available() else -1
-        return self.calculate_scores_on_device(
-            device_id,
-            range(self.epochs),
-            best_params,
-            use_regularization,
-            use_learning_rate,
+    def _get_train_loader(self):
+        """Create and return training data loader."""
+        list_of_train_idx = np.random.choice(
+            np.arange(self.n_train), self.n_pretrain_size, replace=False
         )
 
-    def multi_gpu_calculate_scores(
-        self, best_params, use_regularization=False, use_learning_rate=True
+        # 修改 DataLoader，设置 num_workers=0 避免创建子进程
+        train_loader = torch.utils.data.DataLoader(
+            self.dst_train,
+            batch_sampler=torch.utils.data.BatchSampler(
+                list_of_train_idx, batch_size=self.args.selection_batch, drop_last=False
+            ),
+            num_workers=0,  # 设置为0，不使用多进程加载数据
+            pin_memory=True,
+        )
+
+        return train_loader, list_of_train_idx
+
+    def _init_multiprocessing(self):
+        """Initialize multiprocessing manager and return dict."""
+        from contextlib import suppress
+
+        with suppress(RuntimeError):
+            mp.set_start_method("spawn", force=True)
+        return mp.Manager().dict()
+
+    def _start_worker_processes(
+        self,
+        device_id,
+        epochs_per_worker,
+        best_params,
+        use_regularization,
+        use_learning_rate,
+        return_dict,
+        worker_offset=0,
     ):
-        """Calculate scores using multiple GPUs"""
-        logger = logging.getLogger(__name__)
-        logger.info(f"[OTI] Starting multi-GPU score calculation on {self.num_gpus} GPUs")
-        
-        mp.set_start_method("spawn", force=True)
-        manager = mp.Manager()
-        return_dict = manager.dict()
-
-        # Split epochs among GPUs
-        epochs_per_gpu = [
-            list(range(i, self.epochs, self.num_gpus)) for i in range(self.num_gpus)
-        ]
-
-        # Start processes for each GPU
+        """Start worker processes for a specific device."""
         processes = []
-        for gpu_id in range(self.num_gpus):
-            p = mp.Process(
-                target=self.calculate_scores_on_device,
-                args=(
-                    gpu_id,
-                    epochs_per_gpu[gpu_id],
-                    best_params,
-                    use_regularization,
-                    use_learning_rate,
-                    return_dict,
-                ),
+        for worker_id, epochs in enumerate(epochs_per_worker):
+            if not epochs:  # Skip if no work to do
+                continue
+
+            actual_worker_id = worker_offset + worker_id
+            try:
+                self.logger.info(
+                    f"Starting worker {actual_worker_id} with {len(epochs)} epochs"
+                )
+                p = mp.Process(
+                    target=self._worker_process_wrapper,
+                    args=(
+                        device_id,
+                        epochs,
+                        best_params,
+                        use_regularization,
+                        use_learning_rate,
+                        return_dict,
+                        actual_worker_id,
+                    ),
+                )
+                # 移除 daemon=True 设置
+                processes.append(p)
+                p.start()
+                self.logger.info(f"Worker {actual_worker_id} started successfully")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to start worker {actual_worker_id}: {str(e)}"
+                )
+
+        return processes
+
+    def single_gpu_calculate_scores(
+        self,
+        best_params,
+        init_params,
+        device_id,
+        use_regularization=False,
+        use_learning_rate=True,
+        cpus_per_gpu=4,
+    ):
+        """Calculate scores using single GPU with multiple workers."""
+        self.logger.info("[OTI] Starting score calculation on single GPU")
+        return_dict = self._init_multiprocessing()
+
+        # Load the model with initial parameters
+        self.model.load_state_dict(init_params)
+        self.logger.info("[OTI] Loaded initial parameters")
+
+        scores = torch.zeros(self.n_train)
+        for name, param in best_params.items():
+            best_params[name] = param.to(device_id)
+
+        # Calculate scores
+        for epoch in range(self.epochs):
+            scores += self.calculate_scores_on_device(
+                device_id,
+                [epoch],
+                best_params,
+                use_regularization,
+                use_learning_rate,
+                return_dict,
             )
-            processes.append(p)
-            p.start()
 
-        # Wait for all processes to complete
-        for p in processes:
-            p.join()
+        return scores
 
-        # Combine results from all GPUs
-        total_scores = {}
-        for gpu_scores in return_dict.values():
-            for idx, score in gpu_scores.items():
-                if idx not in total_scores:
-                    total_scores[idx] = score
+    def multi_gpu_calculate_scores(
+        self,
+        best_params,
+        use_regularization=False,
+        use_learning_rate=True,
+        cpus_per_gpu=4,
+    ):
+        """Calculate scores using multiple GPUs with multiple workers per GPU."""
+        raise NotImplementedError("Multi-GPU support is not implemented yet")
+
+    def calculate_scores_on_device(
+        self,
+        device_id,
+        epochs_to_process,
+        best_params,
+        use_regularization=False,
+        use_learning_rate=True,
+        return_dict=None,
+        worker_id=None,
+        train_loader=None,
+        train_indices=None,
+    ):
+        try:
+            worker_name = f"Worker-{worker_id}" if worker_id is not None else f"GPU-{device_id}"
+            device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
+
+            # 重新创建optimizer和scheduler
+            if use_learning_rate:
+                # 重用EarlyTrain中的设置
+                self.model_optimizer = torch.optim.SGD(
+                    self.model.parameters(),
+                    lr=self.args.lr,
+                    momentum=self.args.momentum,
+                    weight_decay=self.args.weight_decay
+                )
+                
+                # 重建scheduler
+                if self.args.scheduler == "CosineAnnealingLR":
+                    self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                        self.model_optimizer, 
+                        T_max=self.args.selection_epochs
+                    )
+                # 可以添加其他scheduler类型
+                
+            if train_loader is None:
+                train_loader, train_indices = self._get_train_loader()
+
+            num_samples = len(train_indices)
+            scores = torch.zeros(num_samples, dtype=torch.float32, device="cpu")
+            
+            for epoch in epochs_to_process:
+                # 使用当前epoch的学习率
+                if use_learning_rate and self.scheduler:
+                    # 设置到正确的epoch
+                    for _ in range(epoch):
+                        self.scheduler.step()
+                    epoch_lr = self.model_optimizer.param_groups[0]['lr']
                 else:
-                    total_scores[idx] += score
+                    epoch_lr = 1.0
+                    
+                self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
-        return total_scores
+                for batch_idx, (inputs, targets) in enumerate(train_loader):
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
+
+                    local_scores, local_indices = self.process_single_batch(
+                        device=device,
+                        train_indices=train_indices,
+                        best_params=best_params,
+                        use_regularization=use_regularization,
+                        worker_name=worker_name,
+                        epoch_lr=epoch_lr,  # 使用当前epoch的实际学习率
+                        epoch=epoch,
+                        batch_idx=batch_idx,
+                        inputs=inputs,
+                        targets=targets,
+                    )
+                    scores[local_indices] = local_scores.cpu()
+
+            if return_dict is not None:
+                return_dict[worker_id if worker_id is not None else device_id] = scores
+
+            return scores
+
+        except Exception as e:
+            self.logger.error(f"[{worker_name}] Error: {str(e)}")
+            import traceback
+            self.logger.error(f"[{worker_name}] Traceback: {traceback.format_exc()}")
+            if return_dict is not None:
+                return_dict[worker_id if worker_id is not None else device_id] = torch.zeros(num_samples)
+            return torch.zeros(num_samples)
+
+    def process_single_batch(
+        self,
+        inputs,
+        targets,
+        batch_idx,
+        train_indices,
+        best_params,
+        epoch_lr,
+        device,
+        use_regularization,
+        worker_name,
+        epoch,
+    ):
+        """使用tensor处理batch"""
+        # 获取batch索引
+        batch_start = batch_idx * self.args.selection_batch
+        batch_end = min((batch_idx + 1) * self.args.selection_batch, len(train_indices))
+        batch_indices = train_indices[batch_start:batch_end]
+        batch_indices_tensor = torch.tensor(batch_indices, device=device)
+
+        # Forward pass
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, targets)
+
+        # Backward pass
+        self.model_optimizer.zero_grad()
+        loss.backward()
+
+        with torch.no_grad():
+            # 计算初始距离
+            initial_distances = torch.zeros(len(batch_indices), device=device)
+            for name, param in self.model.named_parameters():
+                if name in best_params:
+                    param_diff = param - best_params[name]
+                    initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
+
+            # 计算pseudo距离
+            pseudo_distances = torch.zeros(len(batch_indices), device=device)
+            for name, param in self.model.named_parameters():
+                if param.grad is not None and name in best_params:
+                    pseudo_param = param - epoch_lr * param.grad
+                    param_diff = pseudo_param - best_params[name]
+                    pseudo_distances += torch.norm(param_diff.view(1, -1), dim=1)
+
+            # 计算scores
+            if use_regularization:
+                scores = torch.where(
+                    initial_distances > 0,
+                    (initial_distances - pseudo_distances) / initial_distances,
+                    torch.zeros_like(initial_distances),
+                )
+            else:
+                scores = initial_distances - pseudo_distances
+
+        # 更新参数
+        self.model_optimizer.step()
+
+        if batch_idx % 20 == 0:
+            self.logger.info(
+                f"[{worker_name}] Epoch {epoch} Batch {batch_idx}: Loss = {loss.item():.4f}, "
+                f"Samples scored: {len(scores)}, "
+                f"Mean score: {scores.mean().item():.4f}"
+            )
+
+        return scores, batch_indices_tensor
 
     # Learning Rate Methods
     def get_epoch_lr(self, epoch):
-        """Retrieve the learning rate for a specific epoch"""
-        epoch_file = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
-        if os.path.exists(epoch_file):
-            with open(epoch_file, "rb") as f:
-                epoch_data = pickle.load(f)
-                return epoch_data.get("learning_rate", 1.0)
-        return 1.0
+        """Retrieve the learning rate from model's optimizer"""
+        try:
+            return self.model_optimizer.param_groups[0]["lr"]
+        except (AttributeError, IndexError, KeyError):
+            self.logger.error("Failed to retrieve learning rate from model's optimizer")
+            return 1.0
 
     def load_scores(self):
         """Load pre-computed scores from file"""
@@ -719,30 +709,62 @@ class OTI(EarlyTrain):
         """
 
         if self.mode == "full":
+            self.before_run()
             self.run()  # Run the training process
+            if self.best_params is None:
+                self.logger.error(
+                    "self.best_params is None - model has not been trained yet"
+                )
+                raise ValueError(
+                    "self.best_params is None - model has not been trained yet"
+                )
             scores = self.calculate_scores(
                 use_regularization, use_learning_rate, use_sliding_window
             )
         elif self.mode == "stored":
-            scores = self.calculate_scores(
-                use_regularization, use_learning_rate, use_sliding_window
-            )  # Use stored epoch data
+            try:
+                self.load_stored_params()
+                if self.best_params is None:
+                    self.logger.error("Failed to load best parameters from stored data")
+                    raise ValueError("Failed to load best parameters from stored data")
+                scores = self.calculate_scores(
+                    use_regularization, use_learning_rate, use_sliding_window
+                )
+            except FileNotFoundError as e:
+                self.logger.error(f"Error loading stored data: {str(e)}")
+                raise
         elif self.mode == "scores":
-            scores = self.load_scores()  # Load pre-computed scores
+            scores = self.load_scores()
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
         # Convert scores to numpy array
-        score_array = np.array(list(scores.values()))
-        indices = np.array(list(scores.keys()))
+        score_array = scores.cpu().numpy()
+        indices = torch.arange(self.n_train).cpu().numpy()
+
+        # Create DataFrame with scores
+        df = pd.DataFrame({"index": indices, "score": score_array})
+
+        # Sort DataFrame by score in descending order
+        df = df.sort_values("score", ascending=False)
+
+        # Save to CSV
+        csv_path = os.path.join(self.args.save_path, "oti_scores.csv")
+        df.to_csv(csv_path, index=False)
+        self.logger.info(f"[OTI] Saved scores to {csv_path}")
 
         # Select top-k samples based on the scores
         top_k = self.coreset_size
         selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
 
-        logger = logging.getLogger(__name__)
-        logger.info(f"[OTI] Selected {top_k} samples based on scores.")
-        logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
+        # Save selected indices and their scores
+        selected_df = df[df["index"].isin(selected_indices)]
+        selected_csv_path = os.path.join(self.args.save_path, "oti_selected_scores.csv")
+        selected_df.to_csv(selected_csv_path, index=False)
+        self.logger.info(f"[OTI] Saved selected scores to {selected_csv_path}")
+
+        self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
+        self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
 
         return {"indices": selected_indices, "scores": score_array}
 

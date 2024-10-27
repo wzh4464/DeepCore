@@ -214,48 +214,6 @@ class EarlyTrain(CoresetMethod):
             The result of finish_run method.
         """
         self.logger.info("run()")
-        torch.manual_seed(self.random_seed)
-        np.random.seed(self.random_seed)
-        self.train_indx = np.arange(self.n_train)
-
-        # Setup model and loss
-        model_name = (
-            self.args.model if self.specific_model is None else self.specific_model
-        )
-
-        # Check if the model exists in nets.__dict__ before accessing
-        if model_name in nets.__dict__:
-            self.model = nets.__dict__[model_name](
-                self.args.channel,
-                (
-                    self.dst_pretrain_dict["num_classes"]
-                    if self.if_dst_pretrain
-                    else self.num_classes
-                ),
-                pretrained=self.torchvision_pretrain,
-                im_size=(224, 224) if self.torchvision_pretrain else self.args.im_size,
-            ).to(self.args.device)
-        else:
-            raise ValueError(f"Model '{model_name}' not found in nets.__dict__")
-
-        if self.args.device == "cpu":
-            print("Using CPU.")
-        elif self.args.device == "mps":
-            print("Using MPS.")
-            self.model = self.model.to("mps")
-        elif self.args.gpu is not None:
-            torch.cuda.set_device(self.args.gpu[0])
-            self.model = nets.nets_utils.MyDataParallel(
-                self.model, device_ids=self.args.gpu
-            )
-        elif torch.cuda.device_count() > 1:
-            self.model = nets.nets_utils.MyDataParallel(self.model).cuda()
-
-        self.criterion = nn.CrossEntropyLoss().to(self.args.device)
-        self.criterion.__init__()
-
-        # Setup optimizer and scheduler
-        self.setup_optimizer_and_scheduler()
 
         for epoch in range(self.epochs):
             list_of_train_idx = np.random.choice(
@@ -354,23 +312,10 @@ class EarlyTrain(CoresetMethod):
             total += target.size(0)
 
             if batch_idx % self.args.print_freq == 0:
-                print(
-                    "| Test Epoch [%3d/%3d] Iter[%3d/%3d]\t\tTest Loss: %.4f Test Acc: %.3f%%"
-                    % (
-                        epoch,
-                        self.epochs,
-                        batch_idx + 1,
-                        (
-                            round(
-                                len(self.dst_test) * self.args.selection_test_fraction
-                            )
-                            // self.args.selection_batch
-                        )
-                        + 1,
-                        loss.item(),
-                        100.0 * correct / total,
-                    )
+                self.logger.info(
+                    f"| Test Epoch [{epoch}/{self.epochs}] Iter[{batch_idx + 1}/{len(test_loader)}]\t\tTest Loss: {loss.item()} Test Acc: {100.0 * correct / total}%"
                 )
+                self.logger.debug(f"Correct: {correct}, Total: {total}")
 
         self.model.no_grad = False
 
@@ -451,6 +396,48 @@ class EarlyTrain(CoresetMethod):
         Perform actions before the entire run starts.
         """
         self.logger.info("before_run()")
+        torch.manual_seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        self.train_indx = np.arange(self.n_train)
+
+        # Setup model and loss
+        model_name = (
+            self.args.model if self.specific_model is None else self.specific_model
+        )
+
+        # Check if the model exists in nets.__dict__ before accessing
+        if model_name in nets.__dict__:
+            self.model = nets.__dict__[model_name](
+                self.args.channel,
+                (
+                    self.dst_pretrain_dict["num_classes"]
+                    if self.if_dst_pretrain
+                    else self.num_classes
+                ),
+                pretrained=self.torchvision_pretrain,
+                im_size=(224, 224) if self.torchvision_pretrain else self.args.im_size,
+            ).to(self.args.device)
+        else:
+            raise ValueError(f"Model '{model_name}' not found in nets.__dict__")
+
+        if self.args.device == "cpu":
+            print("Using CPU.")
+        elif self.args.device == "mps":
+            print("Using MPS.")
+            self.model = self.model.to("mps")
+        elif self.args.gpu is not None:
+            torch.cuda.set_device(self.args.gpu[0])
+            self.model = nets.nets_utils.MyDataParallel(
+                self.model, device_ids=self.args.gpu
+            )
+        elif torch.cuda.device_count() > 1:
+            self.model = nets.nets_utils.MyDataParallel(self.model).cuda()
+
+        self.criterion = nn.CrossEntropyLoss().to(self.args.device)
+        self.criterion.__init__()
+
+        # Setup optimizer and scheduler
+        self.setup_optimizer_and_scheduler()
 
     def finish_run(self):
         """
@@ -469,4 +456,5 @@ class EarlyTrain(CoresetMethod):
             selection_result: Result of the selection process.
         """
         self.logger.info(f"select({kwargs})")
+        self.before_run()
         return self.run()

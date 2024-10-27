@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 22nd October 2024 11:41:59 am
+# Last Modified: Wednesday, 6th November 2024 9:33:36 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -256,7 +256,7 @@ class DataLoaderX(torch.utils.data.DataLoader):
         return BackgroundGenerator(super().__iter__())
 
 
-def setup_logging(log_dir="logs", log_level=logging.INFO):
+def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None):
     """
     Setup logging configuration with exception handling
     
@@ -273,7 +273,10 @@ def setup_logging(log_dir="logs", log_level=logging.INFO):
     
     # 生成唯一的日志文件名
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(log_dir, f"run_{timestamp}.log")
+    if log_name:
+        log_file = os.path.join(log_dir, f"{log_name}_{timestamp}.log")
+    else:
+        log_file = os.path.join(log_dir, f"run_{timestamp}.log")
     
     # 配置根日志记录器
     logging.basicConfig(
