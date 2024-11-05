@@ -240,6 +240,9 @@ class EarlyTrain(CoresetMethod):
 
         if self.args.device == "cpu":
             print("Using CPU.")
+        elif self.args.device == "mps":
+            print("Using MPS.")
+            self.model = self.model.to("mps")
         elif self.args.gpu is not None:
             torch.cuda.set_device(self.args.gpu[0])
             self.model = nets.nets_utils.MyDataParallel(
