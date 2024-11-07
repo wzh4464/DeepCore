@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=OTI_experiment
-#SBATCH --output=%x_%j.log
-#SBATCH --error=%x_%j_err.log
+#SBATCH --output=logs/%x_%j.log
+#SBATCH --error=logs/%x_%j_err.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
