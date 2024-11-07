@@ -50,9 +50,9 @@ do
         gpu=0
         
         # Set experiment name
-        experiment_name="1103_oti_reg_${reg}_lr_${lr}_batch_${batch}_gpu_${gpu}"
+        experiment_name="1107_oti_reg_${reg}_lr_${lr}_batch_${batch}_gpu_${gpu}"
         
-# Start building the command with basic parameters
+        # Start building the command with basic parameters
         cmd=(
             "$PYTHON" "main.py"
             "--dataset" "CIFAR10"
@@ -98,7 +98,7 @@ do
             "--seed" "0"
         )
 
-        # cmd = random_cmd
+        cmd=("${random_cmd[@]}")
 
         # Add flag parameters as needed
         if [ "$reg" -eq 1 ]; then
