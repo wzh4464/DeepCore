@@ -1,3 +1,4 @@
+Bottleneck @ file:///croot/bottleneck_1731058641041/work
 certifi==2024.7.4
 charset-normalizer==3.3.2
 filelock==3.15.4
@@ -5,9 +6,13 @@ fsspec==2024.6.1
 idna==3.7
 Jinja2==3.1.4
 MarkupSafe==2.1.5
+mkl-service==2.4.0
+mkl_fft @ file:///io/mkl313/mkl_fft_1730824109137/work
+mkl_random @ file:///io/mkl313/mkl_random_1730823916628/work
 mpmath==1.3.0
 networkx==3.3
-numpy==2.0.1
+numexpr @ file:///croot/numexpr_1730215937391/work
+numpy @ file:///croot/numpy_and_numpy_base_1708638617955/work/dist/numpy-1.26.4-cp312-cp312-linux_x86_64.whl#sha256=1d700f51d8b4fa684d858c9e3b56b1656bc5c82b6b79ff08d4e3b491c430059f
 nvidia-cublas-cu12==12.1.3.1
 nvidia-cuda-cupti-cu12==12.1.105
 nvidia-cuda-nvrtc-cu12==12.1.105
@@ -20,11 +25,16 @@ nvidia-cusparse-cu12==12.1.0.106
 nvidia-nccl-cu12==2.20.5
 nvidia-nvjitlink-cu12==12.6.20
 nvidia-nvtx-cu12==12.1.105
-pillow==10.4.0
+pandas==2.2.3
+pillow @ file:///croot/pillow_1721059439630/work
 prefetch_generator==1.0.3
+psutil @ file:///work/perseverance-python-buildout/croot/psutil_1698863411559/work
+python-dateutil @ file:///croot/python-dateutil_1716495738603/work
+pytz==2024.2
 requests==2.32.3
 scipy==1.14.0
 setuptools==72.1.0
+six @ file:///tmp/build/80754af9/six_1644875935023/work
 sourcery-cli==1.18.0
 sympy==1.13.2
 torch==2.4.0
@@ -32,5 +42,6 @@ torchvision==0.19.0
 tqdm==4.66.5
 triton==3.0.0
 typing_extensions==4.12.2
+tzdata @ file:///croot/python-tzdata_1690578112552/work
 urllib3==2.2.2
 wheel==0.43.0
