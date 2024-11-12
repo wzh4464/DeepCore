@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 4th November 2024 9:26:21 am
+# Last Modified: Tuesday, 12th November 2024 6:06:29 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -289,6 +289,14 @@ def parse_args():
         help="Use sliding window in OTI score calculation",
     )
 
+    parser.add_argument(
+        "--log_level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
+
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
     return args
@@ -475,9 +483,7 @@ def initialize_dataset_and_model(args, checkpoint):
     # Configure DataLoaders
     train_loader = torch.utils.data.DataLoader(
         dst_subset,
-        batch_size=(
-            args.train_batch
-        ),
+        batch_size=(args.train_batch),
         shuffle=True,
         num_workers=args.workers,
         pin_memory=True,
@@ -812,9 +818,10 @@ def main():
     Returns:
         None
     """
-    logger = logging.getLogger(__name__)
 
     args = parse_args()
+    # 使用命令行参数设置日志级别
+    logger = setup_logging(log_level=args.log_level)
     logger.info(f"Parsed arguments: {args}")
 
     checkpoint, start_exp, start_epoch = setup_experiment(args)
@@ -828,10 +835,8 @@ def main():
 
 
 if __name__ == "__main__":
-    logger = setup_logging()
-    logger.info("Starting the main function")
     try:
         main()
     except Exception as e:
-        logger.exception("Caught an exception:")
+        logging.exception("Caught an exception in main:")
         raise
