@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 6th November 2024 5:01:50 pm
+# Last Modified: Wednesday, 13th November 2024 5:17:18 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -32,6 +32,20 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from utils import setup_logging
+
+
+class TqdmLoggingHandler(logging.Handler):
+    """自定义日志处理器，使用 tqdm.write 以兼容 tqdm 进度条。"""
+    def __init__(self, level=logging.NOTSET):
+        super().__init__(level)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+            self.flush()
+        except Exception:
+            self.handleError(record)
 
 
 class OTI(EarlyTrain):
@@ -75,6 +89,11 @@ class OTI(EarlyTrain):
             dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
         )
         self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        handler = TqdmLoggingHandler()
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
 
         # Force batch size to 1 for OTI method
         # self.args.selection_batch = 1
@@ -370,10 +389,14 @@ class OTI(EarlyTrain):
                 "[OTI] Using the current model parameters as the best parameters."
             )
             best_params = torch.load(
-                os.path.join(self.args.save_path, "best_params.pkl")
+                os.path.join(self.args.save_path, "best_params.pkl"),
+                weights_only=True
             )
 
-        init_params = torch.load(os.path.join(self.args.save_path, "initial_params.pt"))
+        init_params = torch.load(
+            os.path.join(self.args.save_path, "initial_params.pt"),
+            weights_only=True
+        )
 
         if self.num_gpus <= 1:
             self.logger.info("[OTI] Using single GPU for score calculation")
@@ -568,14 +591,7 @@ class OTI(EarlyTrain):
             
             for epoch in epochs_to_process:
                 # 使用当前epoch的学习率
-                if use_learning_rate and self.scheduler:
-                    # 设置到正确的epoch
-                    for _ in range(epoch):
-                        self.scheduler.step()
-                    epoch_lr = self.model_optimizer.param_groups[0]['lr']
-                else:
-                    epoch_lr = 1.0
-                    
+                epoch_lr = self._set_learning_rate(use_learning_rate, epoch)
                 self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
                 for batch_idx, (inputs, targets) in enumerate(train_loader):
@@ -608,6 +624,14 @@ class OTI(EarlyTrain):
             if return_dict is not None:
                 return_dict[worker_id if worker_id is not None else device_id] = torch.zeros(num_samples)
             return torch.zeros(num_samples)
+
+    def _set_learning_rate(self, use_learning_rate, epoch):
+        if use_learning_rate and self.scheduler:
+            for _ in range(epoch):
+                self.scheduler.step()
+            return self.model_optimizer.param_groups[0]['lr']
+        else:
+            return 1.0
 
     def process_single_batch(
         self,
@@ -769,31 +793,30 @@ class OTI(EarlyTrain):
         return {"indices": selected_indices, "scores": score_array}
 
     # utility methods
-    @staticmethod
-    def verify_saved_lr(save_path, num_epochs):
-        print("[OTI] Starting learning rate verification...")
+    def verify_saved_lr(self, save_path, num_epochs):
+        self.logger.info("[OTI] Starting learning rate verification...")
         for epoch in range(num_epochs):
             epoch_file = os.path.join(save_path, f"epoch_{epoch}_data.pkl")
             if not os.path.exists(epoch_file):
-                print(f"[OTI] Warning: File not found for epoch {epoch}")
+                self.logger.warning(f"[OTI] Warning: File not found for epoch {epoch}")
                 continue
 
             try:
                 with open(epoch_file, "rb") as f:
                     epoch_data = pickle.load(f)
             except Exception as e:
-                print(f"[OTI] Error reading file for epoch {epoch}: {str(e)}")
+                self.logger.error(f"[OTI] Error reading file for epoch {epoch}: {str(e)}")
                 continue
 
             if "learning_rate" not in epoch_data:
-                print(
+                self.logger.warning(
                     f"[OTI] Warning: Learning rate not found in data for epoch {epoch}"
                 )
             else:
                 lr = epoch_data["learning_rate"]
-                print(f"[OTI] Epoch {epoch} learning rate: {lr}")
+                self.logger.info(f"[OTI] Epoch {epoch} learning rate: {lr}")
 
-        print("[OTI] Learning rate verification completed.")
+        self.logger.info("[OTI] Learning rate verification completed.")
 
 
 # Add OTI to SELECTION_METHODS
