@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 13th November 2024 5:17:18 pm
+# Last Modified: Wednesday, 13th November 2024 5:57:16 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -17,16 +17,17 @@
 ###
 
 import os
+import traceback
 from .selection_methods import SELECTION_METHODS
 from .earlytrain import EarlyTrain
 import torch
 import numpy as np
-import pickle
 import torch.multiprocessing as mp
 from tqdm import tqdm
 import logging
-from typing import override
+from typing import Dict, Optional, Tuple, override
 import pandas as pd
+from torch.utils.data import DataLoader
 
 import sys
 
@@ -146,14 +147,14 @@ class OTI(EarlyTrain):
         )
 
         if self.scheduler:
-            self.scheduler.step()
+            self.scheduler.step()  # 确保在 optimizer.step() 之后调用
 
         file_path = os.path.join(
             self.args.save_path, f"epoch_{self.current_epoch}_data.pkl"
         )
 
         with open(file_path, "wb") as f:
-            pickle.dump(
+            torch.save(
                 {
                     "parameters": self.current_epoch_parameters,
                     "data_order": self.epoch_data_orders[self.current_epoch],
@@ -164,7 +165,7 @@ class OTI(EarlyTrain):
                     ),
                     "learning_rate": current_lr,  # 只保存当前epoch的学习率
                 },
-                f,
+                f
             )
 
         self.logger.info(
@@ -253,7 +254,7 @@ class OTI(EarlyTrain):
     def save_best_params(self):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
         with open(best_params_path, "wb") as f:
-            pickle.dump(self.best_params, f)
+            torch.save(self.best_params, f)
         # self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
 
     def save_batch_info(self, epoch, batch_idx, initial_params, loss):
@@ -321,7 +322,7 @@ class OTI(EarlyTrain):
                 self.args.save_path, f"epoch_{epoch-1}_data.pkl"
             )
             with open(prev_epoch_file, "rb") as f:
-                prev_epoch_data = pickle.load(f)
+                prev_epoch_data = torch.load(f, weights_only=True)
             params_before = prev_epoch_data["parameters"][-1]["params"]
         return params_before, params_after, data_idx
 
@@ -355,7 +356,7 @@ class OTI(EarlyTrain):
         if not os.path.exists(file_path):
             raise ValueError(f"No data found for epoch {epoch}")
         with open(file_path, "rb") as f:
-            return pickle.load(f)
+            return torch.load(f, weights_only=True)
 
     def load_best_params(self):
         """
@@ -373,7 +374,7 @@ class OTI(EarlyTrain):
                 f"[OTI] Best parameters file not found at {best_params_path}"
             )
         with open(best_params_path, "rb") as f:
-            return pickle.load(f)
+            return torch.load(f, weights_only=True)
 
     # Score Calculation Methods
     def calculate_scores(
@@ -551,143 +552,98 @@ class OTI(EarlyTrain):
 
     def calculate_scores_on_device(
         self,
-        device_id,
-        epochs_to_process,
-        best_params,
-        use_regularization=False,
-        use_learning_rate=True,
-        return_dict=None,
-        worker_id=None,
-        train_loader=None,
-        train_indices=None,
-    ):
+        device_id: int,
+        epochs_to_process: list,
+        best_params: dict,
+        use_regularization: bool = False,
+        use_learning_rate: bool = True,
+        return_dict: Optional[Dict] = None,
+        worker_id: Optional[int] = None,
+        train_loader: Optional[DataLoader] = None,
+        train_indices: Optional[np.ndarray] = None,
+    ) -> torch.Tensor:
         try:
             worker_name = f"Worker-{worker_id}" if worker_id is not None else f"GPU-{device_id}"
             device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
 
-            # 重新创建optimizer和scheduler
-            if use_learning_rate:
-                # 重用EarlyTrain中的设置
-                self.model_optimizer = torch.optim.SGD(
-                    self.model.parameters(),
-                    lr=self.args.lr,
-                    momentum=self.args.momentum,
-                    weight_decay=self.args.weight_decay
-                )
-                
-                # 重建scheduler
-                if self.args.scheduler == "CosineAnnealingLR":
-                    self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                        self.model_optimizer, 
-                        T_max=self.args.selection_epochs
-                    )
-                # 可以添加其他scheduler类型
-                
+            self._setup_optimizer_scheduler(use_learning_rate)
+
             if train_loader is None:
                 train_loader, train_indices = self._get_train_loader()
 
-            num_samples = len(train_indices)
-            scores = torch.zeros(num_samples, dtype=torch.float32, device="cpu")
-            
+            scores = torch.zeros(len(train_indices), dtype=torch.float32, device="cpu")
+
             for epoch in epochs_to_process:
-                # 使用当前epoch的学习率
-                epoch_lr = self._set_learning_rate(use_learning_rate, epoch)
+                epoch_lr = self._update_learning_rate(use_learning_rate, epoch)
                 self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
                 for batch_idx, (inputs, targets) in enumerate(train_loader):
-                    inputs = inputs.to(device)
-                    targets = targets.to(device)
-
-                    local_scores, local_indices = self.process_single_batch(
-                        device=device,
-                        train_indices=train_indices,
-                        best_params=best_params,
-                        use_regularization=use_regularization,
-                        worker_name=worker_name,
-                        epoch_lr=epoch_lr,  # 使用当前epoch的实际学习率
-                        epoch=epoch,
-                        batch_idx=batch_idx,
-                        inputs=inputs,
-                        targets=targets,
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    batch_scores, batch_indices = self._process_batch(
+                        inputs, targets, batch_idx, best_params, epoch_lr, device, use_regularization, worker_name, epoch, train_indices
                     )
-                    scores[local_indices] = local_scores.cpu()
+                    scores[batch_indices] = batch_scores.cpu()
 
             if return_dict is not None:
-                return_dict[worker_id if worker_id is not None else device_id] = scores
+                # 修改此行，断开梯度追踪并确保张量在CPU上
+                return_dict[worker_id if worker_id is not None else device_id] = scores.detach().cpu()
 
             return scores
 
         except Exception as e:
             self.logger.error(f"[{worker_name}] Error: {str(e)}")
-            import traceback
             self.logger.error(f"[{worker_name}] Traceback: {traceback.format_exc()}")
             if return_dict is not None:
-                return_dict[worker_id if worker_id is not None else device_id] = torch.zeros(num_samples)
-            return torch.zeros(num_samples)
+                return_dict[worker_id if worker_id is not None else device_id] = torch.zeros(len(train_indices))
+            return torch.zeros(len(train_indices))
 
-    def _set_learning_rate(self, use_learning_rate, epoch):
+    def _setup_optimizer_scheduler(self, use_learning_rate: bool):
+        if use_learning_rate:
+            self.model_optimizer = torch.optim.SGD(
+                self.model.parameters(),
+                lr=self.args.lr,
+                momentum=self.args.momentum,
+                weight_decay=self.args.weight_decay
+            )
+            if self.args.scheduler == "CosineAnnealingLR":
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.model_optimizer, 
+                    T_max=self.args.selection_epochs
+                )
+
+    def _update_learning_rate(self, use_learning_rate: bool, epoch: int) -> float:
+        # 移除循环，避免在优化器步骤之前调用 scheduler.step()
         if use_learning_rate and self.scheduler:
-            for _ in range(epoch):
-                self.scheduler.step()
+            # 仅返回当前的学习率
             return self.model_optimizer.param_groups[0]['lr']
-        else:
-            return 1.0
+        return 1.0
 
-    def process_single_batch(
+    def _process_batch(
         self,
-        inputs,
-        targets,
-        batch_idx,
-        train_indices,
-        best_params,
-        epoch_lr,
-        device,
-        use_regularization,
-        worker_name,
-        epoch,
-    ):
-        """使用tensor处理batch"""
-        # 获取batch索引
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+        batch_idx: int,
+        best_params: dict,
+        epoch_lr: float,
+        device: torch.device,
+        use_regularization: bool,
+        worker_name: str,
+        epoch: int,
+        train_indices: np.ndarray
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         batch_start = batch_idx * self.args.selection_batch
         batch_end = min((batch_idx + 1) * self.args.selection_batch, len(train_indices))
         batch_indices = train_indices[batch_start:batch_end]
         batch_indices_tensor = torch.tensor(batch_indices, device=device)
 
-        # Forward pass
         outputs = self.model(inputs)
         loss = self.criterion(outputs, targets)
 
-        # Backward pass
         self.model_optimizer.zero_grad()
         loss.backward()
 
-        with torch.no_grad():
-            # 计算初始距离
-            initial_distances = torch.zeros(len(batch_indices), device=device)
-            for name, param in self.model.named_parameters():
-                if name in best_params:
-                    param_diff = param - best_params[name]
-                    initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
+        scores = self._compute_scores(best_params, epoch_lr, use_regularization, device, batch_indices)
 
-            # 计算pseudo距离
-            pseudo_distances = torch.zeros(len(batch_indices), device=device)
-            for name, param in self.model.named_parameters():
-                if param.grad is not None and name in best_params:
-                    pseudo_param = param - epoch_lr * param.grad
-                    param_diff = pseudo_param - best_params[name]
-                    pseudo_distances += torch.norm(param_diff.view(1, -1), dim=1)
-
-            # 计算scores
-            if use_regularization:
-                scores = torch.where(
-                    initial_distances > 0,
-                    (initial_distances - pseudo_distances) / initial_distances,
-                    torch.zeros_like(initial_distances),
-                )
-            else:
-                scores = initial_distances - pseudo_distances
-
-        # 更新参数
         self.model_optimizer.step()
 
         if batch_idx % 20 == 0:
@@ -698,6 +654,36 @@ class OTI(EarlyTrain):
             )
 
         return scores, batch_indices_tensor
+
+    def _compute_scores(
+        self,
+        best_params: dict,
+        epoch_lr: float,
+        use_regularization: bool,
+        device: torch.device,
+        batch_indices: np.ndarray
+    ) -> torch.Tensor:
+        initial_distances = torch.zeros(len(batch_indices), device=device)
+        pseudo_distances = torch.zeros(len(batch_indices), device=device)
+        for name, param in self.model.named_parameters():
+            if name in best_params:
+                param_diff = param - best_params[name]
+                initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
+
+                if param.grad is not None:
+                    pseudo_param = param - epoch_lr * param.grad
+                    param_diff_pseudo = pseudo_param - best_params[name]
+                    pseudo_distances += torch.norm(param_diff_pseudo.view(1, -1), dim=1)
+
+        return (
+            torch.where(
+                initial_distances > 0,
+                (initial_distances - pseudo_distances) / initial_distances,
+                torch.zeros_like(initial_distances),
+            )
+            if use_regularization
+            else initial_distances - pseudo_distances
+        )
 
     # Learning Rate Methods
     def get_epoch_lr(self, epoch):
@@ -714,7 +700,7 @@ class OTI(EarlyTrain):
         if not os.path.exists(scores_path):
             raise FileNotFoundError(f"Pre-computed scores not found at {scores_path}")
         with open(scores_path, "rb") as f:
-            return pickle.load(f)
+            return torch.load(f, weights_only=True)
 
     # main method
     @override
@@ -763,7 +749,7 @@ class OTI(EarlyTrain):
             raise ValueError(f"Invalid mode: {self.mode}")
 
         # Convert scores to numpy array
-        score_array = scores.cpu().numpy()
+        score_array = scores.detach().cpu().numpy()
         indices = torch.arange(self.n_train).cpu().numpy()
 
         # Create DataFrame with scores
@@ -803,7 +789,7 @@ class OTI(EarlyTrain):
 
             try:
                 with open(epoch_file, "rb") as f:
-                    epoch_data = pickle.load(f)
+                    epoch_data = torch.load(f, weights_only=True)
             except Exception as e:
                 self.logger.error(f"[OTI] Error reading file for epoch {epoch}: {str(e)}")
                 continue
