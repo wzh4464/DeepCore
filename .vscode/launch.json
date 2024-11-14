@@ -40,6 +40,8 @@
                 "--oti_use_learning_rate",
                 "--seed",
                 "0",
+                // "--log_level",
+                // "DEBUG",
             ],
             "console": "internalConsole",
             "justMyCode": true,
