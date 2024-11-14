@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 13th November 2024 5:58:27 pm
+# Last Modified: Thursday, 14th November 2024 3:56:37 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -90,11 +90,11 @@ class OTI(EarlyTrain):
             dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
         )
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
         handler = TqdmLoggingHandler()
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
+        self.logger.debug("[OTI] Logging setup completed.")
 
         # Force batch size to 1 for OTI method
         # self.args.selection_batch = 1
