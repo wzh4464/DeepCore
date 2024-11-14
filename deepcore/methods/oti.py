@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 13th November 2024 5:57:16 pm
+# Last Modified: Wednesday, 13th November 2024 5:58:27 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -678,7 +678,7 @@ class OTI(EarlyTrain):
         return (
             torch.where(
                 initial_distances > 0,
-                (initial_distances - pseudo_distances) / initial_distances,
+                (initial_distances - pseudo_distances) / (initial_distances + pseudo_distances),
                 torch.zeros_like(initial_distances),
             )
             if use_regularization
