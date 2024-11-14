@@ -55,8 +55,8 @@ do
         # Start building the command with basic parameters
         cmd=(
             "$PYTHON" "main.py"
-            "--dataset" "CIFAR10"
-            "--model" "ResNet18"
+            "--dataset" "MNIST"
+            "--model" "LeNet"
             "--selection" "OTI"
             "--num_exp" "1"
             "--batch" "${batch}"
@@ -95,10 +95,10 @@ do
             "--save_path" "/backup/${experiment_name}_results_${SLURM_JOB_ID}"
             "--num_gpus" "1"
             "--oti_mode" "full"
-            "--seed" "0"
+            "--seed" "5"
         )
 
-        cmd=("${random_cmd[@]}")
+        # cmd=("${random_cmd[@]}")
 
         # Add flag parameters as needed
         if [ "$reg" -eq 1 ]; then
