@@ -147,6 +147,33 @@ class EarlyTrain(CoresetMethod):
         self.current_epoch = 0
         self.current_step = 0
 
+    def _set_random_seeds(self, seed):
+        """
+        Set all random seeds to ensure reproducibility.
+        """
+        import random
+        import torch.backends.cudnn as cudnn
+
+        # Python random
+        random.seed(seed)
+
+        # Numpy
+        np.random.seed(seed)
+
+        # PyTorch
+        torch.manual_seed(seed)
+
+        # CUDA
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)  # For multi-GPU
+
+        # Additional settings for reproducibility
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        self.logger.info(f"Set all random seeds to {seed}")
+
     def train(self, epoch, list_of_train_idx, **kwargs):
         """
         Train the model for one epoch.
@@ -234,6 +261,11 @@ class EarlyTrain(CoresetMethod):
         return self.finish_run()
 
     def setup_optimizer_and_scheduler(self):
+        """
+        Defined:
+        - self.model_optimizer: Optimizer to use.
+        - self.scheduler: Scheduler to use.
+        """
         # Setup optimizer
         if self.args.selection_optimizer == "SGD":
             self.model_optimizer = torch.optim.SGD(
@@ -394,10 +426,17 @@ class EarlyTrain(CoresetMethod):
     def before_run(self):
         """
         Perform actions before the entire run starts.
+
+        Defined:
+        - self.model: Model to use for training.
+        - self.criterion: Loss function to use.
+        - self.train_indx: Indices of the training samples.
+        - self.model_optimizer: Optimizer to use.
+        - self.current_epoch: Current epoch number.
+        - self.current_step: Current step number.
         """
         self.logger.info("before_run()")
-        torch.manual_seed(self.random_seed)
-        np.random.seed(self.random_seed)
+        self._set_random_seeds(self.random_seed)
         self.train_indx = np.arange(self.n_train)
 
         # Setup model and loss
