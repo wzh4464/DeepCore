@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 14th November 2024 3:56:37 pm
+# Last Modified: Thursday, 14th November 2024 3:58:20 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -120,17 +120,29 @@ class OTI(EarlyTrain):
 
     @override
     def before_run(self):
-        """运行前初始化"""
+        """
+        Perform pre-run setup tasks.
+        
+        1. super().before_run()
+        2. Save initial parameters to file
+        
+        from super().before_run():
+            Defined:
+                model: The model to train.
+                criterion: The loss function.
+                model_optimizer: The optimizer for the model. (from super.setup_optimizer_and_scheduler())
+                scheduler: The learning rate scheduler. (from super.setup_optimizer_and_scheduler())
+        """
         super().before_run()
-        # 存储初始参数
+        # Save initial parameters
         self.initial_params = {
             name: param.cpu().clone().detach()
             for name, param in self.model.state_dict().items()
         }
-        # 保存为单个文件
+        # Save initial parameters to file
         torch.save(
             self.initial_params,
-            os.path.join(self.args.save_path, "initial_params.pt"),  # 使用.pt而不是.pkl
+            os.path.join(self.args.save_path, "initial_params.pt"),
         )
         self.logger.info(
             f"[OTI] Initial parameters saved to {self.args.save_path}/initial_params.pt"
