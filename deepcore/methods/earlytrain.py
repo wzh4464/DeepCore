@@ -1,3 +1,16 @@
+###
+# File: ./deepcore/methods/earlytrain.py
+# Created Date: Wednesday, November 13th 2024
+# Author: Zihan
+# -----
+# Last Modified: Wednesday, 13th November 2024 9:32:54 am
+# Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
+# -----
+# HISTORY:
+# Date      		By   	Comments
+# ----------		------	---------------------------------------------------------
+###
+
 from .coresetmethod import CoresetMethod
 import torch, time
 from torch import nn
