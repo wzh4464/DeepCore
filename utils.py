@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 6th November 2024 9:33:36 am
+# Last Modified: Friday, 15th November 2024 11:23:48 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -57,25 +57,25 @@ def train(
     for i, contents in enumerate(train_loader):
         optimizer.zero_grad()
         if if_weighted:
-            target = contents[0][1].to(args.device)
-            input = contents[0][0].to(args.device)
+            targets = contents[0][1].to(args.device)
+            inputs = contents[0][0].to(args.device)
 
             # Compute output
-            output = network(input)
+            output = network(inputs)
             weights = contents[1].to(args.device).requires_grad_(False)
-            loss = torch.sum(criterion(output, target) * weights) / torch.sum(weights)
+            loss = torch.sum(criterion(output, targets) * weights) / torch.sum(weights)
         else:
-            target = contents[1].to(args.device)
-            input = contents[0].to(args.device)
+            targets = contents[1].to(args.device)
+            inputs = contents[0].to(args.device)
 
             # Compute output
-            output = network(input)
-            loss = criterion(output, target).mean()
+            output = network(inputs)
+            loss = criterion(output, targets).mean()
 
         # Measure accuracy and record loss
-        prec1 = accuracy(output.data, target, topk=(1,))[0]
-        losses.update(loss.data.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
+        prec1 = accuracy(output.data, targets, topk=(1,))[0]
+        losses.update(loss.data.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
 
         # Compute gradient and do SGD step
         loss.backward()
@@ -120,20 +120,20 @@ def test(test_loader, network, criterion, epoch, args, rec):
     network.no_grad = True
 
     end = time.time()
-    for i, (input, target) in enumerate(test_loader):
-        target = target.to(args.device)
-        input = input.to(args.device)
+    for i, (inputs, targets) in enumerate(test_loader):
+        targets = targets.to(args.device)
+        inputs = inputs.to(args.device)
 
         # Compute output
         with torch.no_grad():
-            output = network(input)
+            output = network(inputs)
 
-            loss = criterion(output, target).mean()
+            loss = criterion(output, targets).mean()
 
         # Measure accuracy and record loss
-        prec1 = accuracy(output.data, target, topk=(1,))[0]
-        losses.update(loss.data.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
+        prec1 = accuracy(output.data, targets, topk=(1,))[0]
+        losses.update(loss.data.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
 
         # Measure elapsed time
         batch_time.update(time.time() - end)
