@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 15th November 2024 12:03:33 pm
+# Last Modified: Friday, 15th November 2024 12:03:55 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -460,7 +460,7 @@ class OTI(EarlyTrain):
             batch_sampler=torch.utils.data.BatchSampler(
                 list_of_train_idx, batch_size=self.args.selection_batch, drop_last=False
             ),
-            num_workers=0,  # 设置为0，不使用多进程加载数据
+            num_workers=self.args.workers,  # 设置为0，不使用多进程加载数据
             pin_memory=True,
         )
 
