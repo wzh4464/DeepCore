@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 15th November 2024 12:03:24 pm
+# Last Modified: Friday, 15th November 2024 12:03:47 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -68,10 +68,10 @@ def parse_args():
     parser.add_argument(
         "-j",
         "--workers",
-        default=4,
+        default=8,
         type=int,
         metavar="N",
-        help="number of data loading workers (default: 4)",
+        help="number of data loading workers (default: 8)",
     )
     parser.add_argument(
         "--cross",
