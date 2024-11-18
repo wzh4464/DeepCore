@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 3:41:49 pm
+# Last Modified: Monday, 18th November 2024 3:44:14 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -37,6 +37,7 @@ from utils import ScoreTracker
 
 class TqdmLoggingHandler(logging.Handler):
     """自定义日志处理器，使用 tqdm.write 以兼容 tqdm 进度条。"""
+
     def __init__(self, level=logging.NOTSET):
         super().__init__(level)
 
@@ -91,7 +92,7 @@ class OTI(EarlyTrain):
         )
         self.logger = logging.getLogger(__name__)
         handler = TqdmLoggingHandler()
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
         self.logger.debug("[OTI] Logging setup completed.")
@@ -137,10 +138,10 @@ class OTI(EarlyTrain):
     def before_run(self):
         """
         Perform pre-run setup tasks.
-        
+
         1. super().before_run()
         2. Save initial parameters to file
-        
+
         from super().before_run():
             Defined:
                 model: The model to train.
@@ -192,7 +193,7 @@ class OTI(EarlyTrain):
                     ),
                     "learning_rate": current_lr,  # 只保存当前epoch的学习率
                 },
-                f
+                f,
             )
 
         self.logger.info(
@@ -417,13 +418,11 @@ class OTI(EarlyTrain):
                 "[OTI] Using the current model parameters as the best parameters."
             )
             best_params = torch.load(
-                os.path.join(self.args.save_path, "best_params.pkl"),
-                weights_only=True
+                os.path.join(self.args.save_path, "best_params.pkl"), weights_only=True
             )
 
         init_params = torch.load(
-            os.path.join(self.args.save_path, "initial_params.pt"),
-            weights_only=True
+            os.path.join(self.args.save_path, "initial_params.pt"), weights_only=True
         )
 
         if self.num_gpus <= 1:
@@ -590,7 +589,9 @@ class OTI(EarlyTrain):
         train_indices: Optional[np.ndarray] = None,
     ) -> torch.Tensor:
         try:
-            worker_name = f"Worker-{worker_id}" if worker_id is not None else f"GPU-{device_id}"
+            worker_name = (
+                f"Worker-{worker_id}" if worker_id is not None else f"GPU-{device_id}"
+            )
             device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
 
             self._setup_optimizer_scheduler(use_learning_rate)
@@ -607,13 +608,24 @@ class OTI(EarlyTrain):
                 for batch_idx, (inputs, targets) in enumerate(train_loader):
                     inputs, targets = inputs.to(device), targets.to(device)
                     batch_scores, batch_indices = self._process_batch(
-                        inputs, targets, batch_idx, best_params, epoch_lr, device, use_regularization, worker_name, epoch, train_indices
+                        inputs,
+                        targets,
+                        batch_idx,
+                        best_params,
+                        epoch_lr,
+                        device,
+                        use_regularization,
+                        worker_name,
+                        epoch,
+                        train_indices,
                     )
                     scores[batch_indices] = batch_scores.cpu()
 
             if return_dict is not None:
                 # 修改此行，断开梯度追踪并确保张量在CPU上
-                return_dict[worker_id if worker_id is not None else device_id] = scores.detach().cpu()
+                return_dict[worker_id if worker_id is not None else device_id] = (
+                    scores.detach().cpu()
+                )
 
             return scores
 
@@ -621,7 +633,9 @@ class OTI(EarlyTrain):
             self.logger.error(f"[{worker_name}] Error: {str(e)}")
             self.logger.error(f"[{worker_name}] Traceback: {traceback.format_exc()}")
             if return_dict is not None:
-                return_dict[worker_id if worker_id is not None else device_id] = torch.zeros(len(train_indices))
+                return_dict[worker_id if worker_id is not None else device_id] = (
+                    torch.zeros(len(train_indices))
+                )
             return torch.zeros(len(train_indices))
 
     def _setup_optimizer_scheduler(self, use_learning_rate: bool):
@@ -630,19 +644,18 @@ class OTI(EarlyTrain):
                 self.model.parameters(),
                 lr=self.args.lr,
                 momentum=self.args.momentum,
-                weight_decay=self.args.weight_decay
+                weight_decay=self.args.weight_decay,
             )
             if self.args.scheduler == "CosineAnnealingLR":
                 self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    self.model_optimizer, 
-                    T_max=self.args.selection_epochs
+                    self.model_optimizer, T_max=self.args.selection_epochs
                 )
 
     def _update_learning_rate(self, use_learning_rate: bool, epoch: int) -> float:
         # 移除循环，避免在优化器步骤之前调用 scheduler.step()
         if use_learning_rate and self.scheduler:
             # 仅返回当前的学习率
-            return self.model_optimizer.param_groups[0]['lr']
+            return self.model_optimizer.param_groups[0]["lr"]
         return 1.0
 
     def _process_batch(
@@ -656,7 +669,7 @@ class OTI(EarlyTrain):
         use_regularization: bool,
         worker_name: str,
         epoch: int,
-        train_indices: np.ndarray
+        train_indices: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         batch_start = batch_idx * self.args.selection_batch
         batch_end = min((batch_idx + 1) * self.args.selection_batch, len(train_indices))
@@ -669,7 +682,9 @@ class OTI(EarlyTrain):
         self.model_optimizer.zero_grad()
         loss.backward()
 
-        scores = self._compute_scores(best_params, epoch_lr, use_regularization, device, batch_indices)
+        scores = self._compute_scores(
+            best_params, epoch_lr, use_regularization, device, batch_indices
+        )
 
         self.model_optimizer.step()
 
@@ -688,7 +703,7 @@ class OTI(EarlyTrain):
         epoch_lr: float,
         use_regularization: bool,
         device: torch.device,
-        batch_indices: np.ndarray
+        batch_indices: np.ndarray,
     ) -> torch.Tensor:
         initial_distances = torch.zeros(len(batch_indices), device=device)
         pseudo_distances = torch.zeros(len(batch_indices), device=device)
@@ -705,7 +720,8 @@ class OTI(EarlyTrain):
         return (
             torch.where(
                 initial_distances > 0,
-                (initial_distances - pseudo_distances) / (initial_distances + pseudo_distances),
+                (initial_distances - pseudo_distances)
+                / (initial_distances + pseudo_distances),
                 torch.zeros_like(initial_distances),
             )
             if use_regularization
@@ -831,7 +847,9 @@ class OTI(EarlyTrain):
                 with open(epoch_file, "rb") as f:
                     epoch_data = torch.load(f, weights_only=True)
             except Exception as e:
-                self.logger.error(f"[OTI] Error reading file for epoch {epoch}: {str(e)}")
+                self.logger.error(
+                    f"[OTI] Error reading file for epoch {epoch}: {str(e)}"
+                )
                 continue
 
             if "learning_rate" not in epoch_data:
