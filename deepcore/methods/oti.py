@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 15th November 2024 12:03:33 pm
+# Last Modified: Monday, 18th November 2024 3:41:49 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from utils import setup_logging
+from utils import ScoreTracker
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -117,6 +117,21 @@ class OTI(EarlyTrain):
         self.use_regularization = use_regularization
         self.use_learning_rate = use_learning_rate
         self.use_sliding_window = use_sliding_window
+
+        # Initialize score tracker
+        self.score_tracker = ScoreTracker(len(dst_train), args.save_path)
+
+        # Store initial seed
+        self.initial_seed = random_seed if random_seed is not None else args.seed
+
+    def _update_seed(self):
+        """Update seed based on current experiment number."""
+        new_seed = self.initial_seed + self.score_tracker.current_exp
+        self.args.seed = new_seed
+        self.logger.info(
+            f"[OTI] Updated seed to {new_seed} for experiment {self.score_tracker.current_exp + 1}"
+        )
+        return new_seed
 
     @override
     def before_run(self):
@@ -730,6 +745,44 @@ class OTI(EarlyTrain):
             dict: A dictionary containing the selected indices and their scores.
         """
 
+        score_array, indices = self.get_score(
+            use_regularization, use_learning_rate, use_sliding_window
+        )
+
+        # Create DataFrame with scores
+        df, top_k, selected_indices = self.select_top_k_scores(score_array, indices)
+
+        # Save selected indices and their scores
+        self.save_selected_scores(score_array, df, top_k, selected_indices)
+
+        return {"indices": selected_indices, "scores": score_array}
+
+    def save_selected_scores(self, score_array, df, top_k, selected_indices):
+        selected_df = df[df["index"].isin(selected_indices)]
+        selected_csv_path = os.path.join(self.args.save_path, "oti_selected_scores.csv")
+        selected_df.to_csv(selected_csv_path, index=False)
+        self.logger.info(f"[OTI] Saved selected scores to {selected_csv_path}")
+
+        self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
+        self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
+
+    def select_top_k_scores(self, score_array, indices):
+        df = pd.DataFrame({"index": indices, "score": score_array})
+
+        # Sort DataFrame by score in descending order
+        df = df.sort_values("score", ascending=False)
+
+        # Save to CSV
+        csv_path = os.path.join(self.args.save_path, "oti_scores.csv")
+        df.to_csv(csv_path, index=False)
+        self.logger.info(f"[OTI] Saved scores to {csv_path}")
+
+        # Select top-k samples based on the scores
+        top_k = self.coreset_size
+        selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
+        return df, top_k, selected_indices
+
+    def get_score(self, use_regularization, use_learning_rate, use_sliding_window):
         if self.mode == "full":
             self.before_run()
             self.run()  # Run the training process
@@ -763,32 +816,7 @@ class OTI(EarlyTrain):
         # Convert scores to numpy array
         score_array = scores.detach().cpu().numpy()
         indices = torch.arange(self.n_train).cpu().numpy()
-
-        # Create DataFrame with scores
-        df = pd.DataFrame({"index": indices, "score": score_array})
-
-        # Sort DataFrame by score in descending order
-        df = df.sort_values("score", ascending=False)
-
-        # Save to CSV
-        csv_path = os.path.join(self.args.save_path, "oti_scores.csv")
-        df.to_csv(csv_path, index=False)
-        self.logger.info(f"[OTI] Saved scores to {csv_path}")
-
-        # Select top-k samples based on the scores
-        top_k = self.coreset_size
-        selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
-
-        # Save selected indices and their scores
-        selected_df = df[df["index"].isin(selected_indices)]
-        selected_csv_path = os.path.join(self.args.save_path, "oti_selected_scores.csv")
-        selected_df.to_csv(selected_csv_path, index=False)
-        self.logger.info(f"[OTI] Saved selected scores to {selected_csv_path}")
-
-        self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
-        self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
-
-        return {"indices": selected_indices, "scores": score_array}
+        return score_array, indices
 
     # utility methods
     def verify_saved_lr(self, save_path, num_epochs):
