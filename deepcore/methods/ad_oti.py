@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 17th November 2024 9:09:44 pm
+# Last Modified: Monday, 18th November 2024 9:45:39 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -152,10 +152,11 @@ class AD_OTI(OTI):
         )
 
         # Initialize model state
-        theta_prev = {
-            name: param.cpu().clone() for name, param in self.model.state_dict().items()
-        }
-        Q_theta.append((0, theta_prev))
+
+        theta_prev_tensor, self.param_shapes, self.param_sizes = self._dict_to_tensor(
+            self.model.state_dict()
+        )
+        Q_theta.append((0, theta_prev_tensor))
         self.logger.info("Initial model parameters saved to queue.")
 
         for t in range(1, T + 1):
@@ -168,11 +169,8 @@ class AD_OTI(OTI):
             self._train_step(inputs, targets, t, T)
 
             # Save current parameters
-            theta_t = {
-                name: param.cpu().clone()
-                for name, param in self.model.state_dict().items()
-            }
-            Q_theta.append((t, theta_t))  # Q_theta[t]
+            theta_t_tensor, _, _ = self._dict_to_tensor(self.model.state_dict())
+            Q_theta.append((t, theta_t_tensor))  # Q_theta[t]
             self.logger.debug(f"Model parameters saved to queue at step {t}.")
 
             # Compute current loss and adjust window size
@@ -198,14 +196,16 @@ class AD_OTI(OTI):
                 t_1, t_2 = Q_ref.popleft()
                 self.logger.debug("Processing reference pair (t1=%d, t2=%d).", t_1, t_2)
                 # Retrieve corresponding model parameters
-                theta_t2 = self._ensure_on_device(
-                    next((theta for step, theta in Q_theta if step == t_2), None)
-                )
-                theta_t1_prev = self._ensure_on_device(
-                    next((theta for step, theta in Q_theta if step == t_1 - 1), None)
+                theta_t2 = next((theta for step, theta in Q_theta if step == t_2), None)
+                theta_t1_prev = next(
+                    (theta for step, theta in Q_theta if step == t_1 - 1), None
                 )
 
-                if theta_t2 and theta_t1_prev:
+                if theta_t2 is not None and theta_t1_prev is not None:
+                    # Ensure parameters are on the correct device
+                    theta_t2 = theta_t2.to(self.args.device)
+                    theta_t1_prev = theta_t1_prev.to(self.args.device)
+
                     # Prepare batch data
                     data_batch = torch.stack(
                         [self.dst_train[idx][0] for idx in batch_indices]
@@ -214,22 +214,21 @@ class AD_OTI(OTI):
                         [self.dst_train[idx][1] for idx in batch_indices]
                     ).to(self.args.device)
 
-                    # 计算批次梯度
-                    batch_gradients = self._batch_compute_gradients(
+                    # 计算批次梯度张量
+                    gradients_tensor = self._batch_compute_gradients(
                         theta_t1_prev, data_batch, target_batch
                     )
 
-                    # 计算批次伪参数
+                    # 计算批次伪参数张量
                     eta_t1 = self.get_lr()
-                    batch_pseudo_params = self._batch_compute_pseudo_params(
-                        theta_t1_prev, batch_gradients, eta_t1
+                    batch_pseudo_params_tensor = self._batch_compute_pseudo_params(
+                        theta_t1_prev, gradients_tensor, eta_t1
                     )
 
                     # 计算估值
                     v_i_t1 = self._batch_compute_valuations(
-                        theta_t2, theta_t1_prev, batch_pseudo_params, batch_indices
+                        theta_t2, theta_t1_prev, batch_pseudo_params_tensor
                     )
-
                     # 更新累积估值
                     v_cumulative[batch_indices] += v_i_t1
 
@@ -266,89 +265,175 @@ class AD_OTI(OTI):
 
     def _dict_to_tensor(self, param_dict):
         """
-        将参数字典转换为单个张量。
+        将参数字典转换为单个张量，以及参数形状和大小列表。
 
         Args:
-            param_dict (Dict[str, torch.Tensor]): 参数字典
+            param_dict (Dict[str, torch.Tensor]): 模型的状态字典
 
         Returns:
-            tuple: (连接的张量, 每个参数的形状列表, 参数名列表)
+            (torch.Tensor, List[torch.Size], List[int]): 参数张量，参数形状列表，每个参数的元素数量列表
         """
-        # 使用dict_add_subtract确保所有张量在同一设备上
-        param_dict = {k: v.to(self.args.device) for k, v in param_dict.items()}
         param_shapes = []
-        param_names = []
-        flattened_tensors = []
+        param_sizes = []
+        tensors = []
 
-        for name, param in param_dict.items():
+        for param in param_dict.values():
             param_shapes.append(param.shape)
-            param_names.append(name)
-            # 确保所有张量reshape为 [1, -1]，统一第0维大小为1
-            param = param.view(-1).unsqueeze(0)
-            flattened_tensors.append(param)
+            size = param.numel()
+            param_sizes.append(size)
+            tensors.append(param.view(-1))
 
-        # 在最后一维连接所有展平的张量
-        return torch.cat(flattened_tensors, dim=1), param_shapes, param_names
+        # 将所有参数展平后连接成一个张量
+        param_tensor = torch.cat(tensors)
+        return param_tensor, param_shapes, param_sizes
 
-    def _batch_compute_valuations(
-        self, theta_t2, theta_t1_prev, batch_pseudo_params, batch_indices
+    def _tensor_to_dict(self, param_tensor, param_shapes, param_sizes):
+        """
+        将参数张量还原为参数字典。
+
+        Args:
+            param_tensor (torch.Tensor): 参数张量
+            param_shapes (List[torch.Size]): 参数形状列表
+            param_sizes (List[int]): 每个参数的元素数量列表
+
+        Returns:
+            Dict[str, torch.Tensor]: 模型的状态字典
+        """
+        param_dict = {}
+        index = 0
+        for (name, _), shape, size in zip(
+            self.model.state_dict().items(), param_shapes, param_sizes
+        ):
+            param_flat = param_tensor[index : index + size]
+            param = param_flat.view(shape)
+            param_dict[name] = param
+            index += size
+        return param_dict
+
+    def _batch_compute_gradients(self, theta_t1_prev_tensor, batch_data, batch_targets):
+        """
+        使用张量运算计算批次梯度，直接返回张量格式。
+
+        Args:
+            theta_t1_prev_tensor (torch.Tensor): 上一时刻的参数张量 [N]
+            batch_data (torch.Tensor): 批次输入数据 [B, ...]
+            batch_targets (torch.Tensor): 批次目标 [B]
+
+        Returns:
+            torch.Tensor: 批次梯度张量 [B, N]，其中 N 是模型总参数数量
+        """
+        B = batch_data.size(0)
+        # 将参数张量转换为参数字典并加载到模型中
+        theta_t1_prev = self._tensor_to_dict(
+            theta_t1_prev_tensor, self.param_shapes, self.param_sizes
+        )
+        self.model.load_state_dict(theta_t1_prev)
+        self.model.train()
+
+        # 获取模型总参数数量
+        N = sum(p.numel() for p in self.model.parameters())
+
+        if hasattr(torch, "vmap"):
+            # 使用 vmap 进行向量化计算
+            def compute_sample_grad(x, y):
+                """计算单个样本的梯度"""
+                self.model.zero_grad()
+                out = self.model(x.unsqueeze(0))
+                loss = self.criterion(out, y.unsqueeze(0))
+                # 计算并展平所有参数的梯度
+                grads = torch.autograd.grad(
+                    loss, self.model.parameters(), create_graph=False
+                )
+                return torch.cat([g.flatten() for g in grads])
+
+            # 向量化计算函数
+            batch_grad_fn = torch.vmap(compute_sample_grad)
+
+            # 并行计算所有样本的梯度
+            try:
+                all_grads = batch_grad_fn(batch_data, batch_targets)  # [B, N]
+            except RuntimeError:  # 如果 vmap 失败，回退到分块处理
+                all_grads = torch.zeros(B, N, device=self.args.device)
+                chunk_size = 32
+                for i in range(0, B, chunk_size):
+                    end_idx = min(i + chunk_size, B)
+                    all_grads[i:end_idx] = torch.stack(
+                        [
+                            compute_sample_grad(batch_data[j], batch_targets[j])
+                            for j in range(i, end_idx)
+                        ]
+                    )
+        else:
+            # 不使用 vmap 时的实现：分块计算
+            all_grads = torch.zeros(B, N, device=self.args.device)
+            chunk_size = 32  # 可以根据 GPU 内存调整
+
+            for i in range(0, B, chunk_size):
+                end_idx = min(i + chunk_size, B)
+                chunk_data = batch_data[i:end_idx]
+                chunk_targets = batch_targets[i:end_idx]
+                chunk_size = end_idx - i
+
+                # 对每个样本计算梯度
+                for j in range(chunk_size):
+                    self.model.zero_grad()
+                    output = self.model(chunk_data[j : j + 1])
+                    loss = self.criterion(output, chunk_targets[j : j + 1])
+
+                    # 计算梯度
+                    grads = torch.autograd.grad(
+                        loss,
+                        self.model.parameters(),
+                        create_graph=False,
+                        retain_graph=False,
+                    )
+
+                    # 将所有参数的梯度展平并连接
+                    all_grads[i + j] = torch.cat([g.flatten() for g in grads])
+
+        # 确保没有梯度计算图附加到输出
+        return all_grads.detach()
+
+    def _batch_compute_pseudo_params(
+        self, theta_t1_prev_tensor, gradients_tensor, eta_t1
     ):
         """
-        批量计算样本估值。
+        使用张量运算计算批次伪参数。
 
         Args:
-            theta_t2 (Dict[str, torch.Tensor]): t2时刻的参数
-            theta_t1_prev (Dict[str, torch.Tensor]): t1-1时刻的参数
-            batch_pseudo_params (Dict[str, torch.Tensor]): 批次伪参数
-            batch_indices (tensor): 批次索引
+            theta_t1_prev_tensor (torch.Tensor): 上一时刻的参数张量
+            gradients_tensor (torch.Tensor): 批次梯度张量 [B, N]
+            eta_t1 (float): 学习率
 
         Returns:
-            torch.Tensor: 批次样本的估值
+            torch.Tensor: 批次伪参数张量 [B, N]
         """
-        # 使用dict_add_subtract进行张量计算，加速GPU利用
-        delta_theta = self.dict_add_subtract(
-            theta_t2, theta_t1_prev, operation="sub", device=self.args.device
+        pseudo_params_tensor = (
+            theta_t1_prev_tensor.unsqueeze(0) - eta_t1 * gradients_tensor
         )
+        return pseudo_params_tensor
 
-        # 将所有字典转换为张量
-        theta_t2_tensor, _, _ = self._dict_to_tensor(theta_t2)  # torch.Size([1, 61706])
-        theta_t1_prev_tensor, _, _ = self._dict_to_tensor(
-            theta_t1_prev
-        )  # torch.Size([1, 61706])
-        pseudo_params_tensor, _, _ = self._dict_to_tensor(
-            batch_pseudo_params
-        )  # torch.Size([1, 15796736])
+    def _batch_compute_valuations(
+        self, theta_t2_tensor, theta_t1_prev_tensor, batch_pseudo_params_tensor
+    ):
+        """
+        使用张量运算计算批次样本的估值。
 
-        # 将伪参数reshape到匹配批次大小 dim 0 = batch_size
-        pseudo_params_tensor = pseudo_params_tensor.reshape(
-            len(batch_indices), -1
-        )  # torch.Size([256, 61706])
+        Args:
+            theta_t2_tensor (torch.Tensor): t2 时刻的参数张量
+            theta_t1_prev_tensor (torch.Tensor): t1-1 时刻的参数张量
+            batch_pseudo_params_tensor (torch.Tensor): 批次伪参数张量 [B, N]
 
-        # 计算delta_theta
-        delta_theta = theta_t2_tensor - theta_t1_prev_tensor  # torch.Size([1, 61706])
+        Returns:
+            torch.Tensor: 批次样本的估值 [B]
+        """
+        delta_theta = theta_t2_tensor - theta_t1_prev_tensor  # [N]
+        delta_theta_norm = torch.norm(delta_theta)  # 标量
 
-        # 计算范数（在最后一维）
-        delta_theta_norm = torch.norm(delta_theta, dim=1)  # torch.Size([1])
-        delta_theta_norm_expanded = delta_theta_norm.expand(
-            len(batch_indices)
-        )  # torch.Size([256])
+        u = theta_t2_tensor.unsqueeze(0) - batch_pseudo_params_tensor  # [B, N]
+        u_norm = torch.norm(u, dim=1)  # [B]
 
-        # 扩展theta_t2以匹配批次大小 to torch.Size([256, 61706])
-        theta_t2_expanded = theta_t2_tensor.expand(len(batch_indices), -1)
-
-        # 计算u
-        u = theta_t2_expanded - pseudo_params_tensor  # torch.Size([256, 61706])
-        u_norm = torch.norm(u, dim=1)  # torch.Size([256])
-
-        # 计算估值
-        v_i_t1 = (delta_theta_norm_expanded - u_norm) / (
-            delta_theta_norm_expanded + u_norm
-        )
-
-        assert torch.all(v_i_t1 >= -1.0) and torch.all(
-            v_i_t1 <= 1.0
-        ), "Valuation out of bounds"
-
+        v_i_t1 = (delta_theta_norm - u_norm) / (delta_theta_norm + u_norm)
         return v_i_t1
 
     def dict_add_subtract(self, dict1, dict2, operation="add", device="cuda"):
@@ -421,69 +506,6 @@ class AD_OTI(OTI):
                 self.logger.debug("Decreased window size to %d at step %d.", delta, t)
         L_prev = L_t
         return delta, L_prev
-
-    def _batch_compute_gradients(self, theta_t1_prev, batch_data, batch_targets):
-        """
-        Compute gradients for a batch of samples simultaneously.
-
-        Args:
-            theta_t1_prev: Previous model parameters
-            batch_data: Batch of input data [B x ...]
-            batch_targets: Batch of targets [B]
-
-        Returns:
-            Dict[str, torch.Tensor] with gradients for each parameter
-            Each gradient tensor has shape [B x param_shape]
-        """
-        B = len(batch_data)
-        self.model.load_state_dict(theta_t1_prev)
-
-        # Initialize gradient storage
-        grad_storage = {
-            name: torch.zeros((B,) + param.shape, device=self.args.device)
-            for name, param in self.model.named_parameters()
-        }
-
-        # Compute gradients for each sample in parallel
-        self.model.zero_grad()
-        outputs = self.model(batch_data)
-
-        # Compute individual losses for each sample
-        individual_losses = torch.stack(
-            [
-                self.criterion(outputs[i : i + 1], batch_targets[i : i + 1])
-                for i in range(B)
-            ]
-        )
-
-        # Compute gradients for each sample
-        for i in range(B):
-            individual_losses[i].backward(retain_graph=(i < B - 1))
-            for name, param in self.model.named_parameters():
-                if param.grad is not None:
-                    grad_storage[name][i] = param.grad.clone()
-            self.model.zero_grad()
-
-        return grad_storage
-
-    def _batch_compute_pseudo_params(self, theta_t1_prev, gradients, eta_t1):
-        """
-        Compute pseudo parameters for a batch in parallel.
-
-        Args:
-            theta_t1_prev: Previous model parameters
-            gradients: Batch gradients [B x param_shape]
-            eta_t1: Learning rate
-
-        Returns:
-            Dict containing pseudo parameters for the batch
-        """
-        # 使用dict_add_subtract进行伪参数计算，确保在GPU上执行
-        adjusted_gradients = {k: eta_t1 * v for k, v in gradients.items()}
-        pseudo_params = self.dict_add_subtract(
-            theta_t1_prev, adjusted_gradients, operation="sub", device=self.args.device
-        )
-        return self._ensure_on_device(pseudo_params)
 
     def _monitor_resources(self):
         """Monitor GPU and CPU memory usage."""
