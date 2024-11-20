@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 3:44:29 pm
+# Last Modified: Wednesday, 20th November 2024 9:47:32 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -220,7 +220,7 @@ class OTI(EarlyTrain):
                 name: param.cpu().clone().detach()
                 for name, param in self.model.state_dict().items()
             }
-            self.save_best_params()
+            self._save_best_params()
             self.logger.info(
                 "[OTI] Run finished. All intermediate results have been preserved."
             )
@@ -254,7 +254,7 @@ class OTI(EarlyTrain):
                 name: param.cpu().clone().detach()
                 for name, param in self.model.state_dict().items()
             }
-            self.save_best_params()
+            self._save_best_params()
 
         # Print progress at appropriate intervals
         if self.current_step % self.args.print_freq == 0:
@@ -279,114 +279,15 @@ class OTI(EarlyTrain):
                 f"|Training First Round| Epoch [{epoch}/{self.epochs}] Iter[{batch_idx+1}/{(self.n_train // batch_size)+1}]\t\tLoss: {loss.item():.4f}"
             )
 
-    def save_best_params(self):
+    def _save_best_params(self):
         best_params_path = os.path.join(self.args.save_path, "best_params.pkl")
         with open(best_params_path, "wb") as f:
             torch.save(self.best_params, f)
         # self.logger.info(f"[OTI] Best parameters saved to {best_params_path}")
 
-    def save_batch_info(self, epoch, batch_idx, initial_params, loss):
-        batch_dir = os.path.join(
-            self.args.save_path, f"epoch_{epoch}", f"batch_{batch_idx}"
-        )
-        os.makedirs(batch_dir, exist_ok=True)
-
-        # Save initial parameters
-        torch.save(initial_params, os.path.join(batch_dir, "initial_params.pt"))
-
     # Parameter Retrieval Methods
-    def get_params(self, epoch, step):
-        """
-        Retrieve parameters for a specific epoch and step.
 
-        Args:
-            epoch (int): The epoch number.
-            step (int): The step number within the epoch.
-
-        Returns:
-            dict: The model parameters at the specified epoch and step.
-        """
-        epoch_data = self._load_epoch_data(epoch)
-        for param_dict in epoch_data["parameters"]:
-            if param_dict["step"] == step:
-                return param_dict["params"]
-        raise ValueError(f"No parameters found for step {step} in epoch {epoch}")
-
-    def get_params_before_after(self, epoch, step):
-        """
-        Retrieve parameters before and after a specific update step.
-
-        Args:
-            epoch (int): The epoch number.
-            step (int): The step number within the epoch.
-
-        Returns:
-            tuple: A tuple containing two dictionaries (params_before, params_after) and the data point index.
-        """
-        epoch_data = self._load_epoch_data(epoch)
-        params_before = None
-        params_after = None
-        data_idx = None
-
-        for i, param_dict in enumerate(epoch_data["parameters"]):
-            if param_dict["step"] == step:
-                params_after = param_dict["params"]
-                data_idx = param_dict["data_idx"]
-                if i > 0:
-                    params_before = epoch_data["parameters"][i - 1]["params"]
-                break
-
-        if params_after is None:
-            raise ValueError(f"No parameters found for step {step} in epoch {epoch}")
-
-        if params_before is None:
-            if epoch <= 0:
-                raise ValueError(
-                    f"No parameters found before step {step} in epoch {epoch}"
-                )
-
-            # If it's the first step of an epoch, get the last step of the previous epoch
-            prev_epoch_file = os.path.join(
-                self.args.save_path, f"epoch_{epoch-1}_data.pkl"
-            )
-            with open(prev_epoch_file, "rb") as f:
-                prev_epoch_data = torch.load(f, weights_only=True)
-            params_before = prev_epoch_data["parameters"][-1]["params"]
-        return params_before, params_after, data_idx
-
-    def get_data_order(self, epoch):
-        """
-        Retrieve the data point order for a specific epoch.
-
-        Args:
-            epoch (int): The epoch number.
-
-        Returns:
-            list: The order of data points used in the specified epoch.
-        """
-        epoch_data = self._load_epoch_data(epoch)
-        return epoch_data["data_order"]
-
-    def _load_epoch_data(self, epoch):
-        """
-        Load compressed data for a specific epoch.
-
-        Args:
-            epoch (int): The epoch number for which to load the compressed data.
-
-        Returns:
-            Any: The data loaded from the compressed file.
-
-        Raises:
-            ValueError: If no data is found for the specified epoch.
-        """
-        file_path = os.path.join(self.args.save_path, f"epoch_{epoch}_data.pkl")
-        if not os.path.exists(file_path):
-            raise ValueError(f"No data found for epoch {epoch}")
-        with open(file_path, "rb") as f:
-            return torch.load(f, weights_only=True)
-
-    def load_best_params(self):
+    def _load_best_params(self):
         """
         Load the best parameters from a file.
 
@@ -405,14 +306,14 @@ class OTI(EarlyTrain):
             return torch.load(f, weights_only=True)
 
     # Score Calculation Methods
-    def calculate_scores(
+    def _calculate_scores(
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
         """
         Calculate scores by training in real-time and comparing parameters with best_params.
         """
         try:
-            best_params = self.load_best_params()
+            best_params = self._load_best_params()
         except FileNotFoundError:
             self.logger.info(
                 "[OTI] Using the current model parameters as the best parameters."
@@ -428,7 +329,7 @@ class OTI(EarlyTrain):
         if self.num_gpus <= 1:
             self.logger.info("[OTI] Using single GPU for score calculation")
             device_id = self.args.gpu[0]
-            return self.single_gpu_calculate_scores(
+            return self._single_gpu_calculate_scores(
                 best_params,
                 init_params,
                 device_id,
@@ -438,7 +339,7 @@ class OTI(EarlyTrain):
             )
         else:
             self.logger.info("[OTI] Using multiple GPUs for score calculation")
-            return self.multi_gpu_calculate_scores(
+            return self._multi_gpu_calculate_scores(
                 best_params,
                 init_params,
                 use_regularization,
@@ -446,7 +347,7 @@ class OTI(EarlyTrain):
                 # use_sliding_window
             )
 
-    def calculate_l2_distance(self, params1, params2, device):
+    def _calculate_l2_distance(self, params1, params2, device):
         """Calculate L2 distance between two parameter sets"""
         return sum(
             torch.norm(params1[name].to(device) - params2[name].to(device)).item()
@@ -454,7 +355,7 @@ class OTI(EarlyTrain):
             if name in params2
         )
 
-    def calculate_pseudo_params(self, params, grads, learning_rate):
+    def _calculate_pseudo_params(self, params, grads, learning_rate):
         """Calculate pseudo parameters for a given set of parameters and gradients."""
         return {
             name: params[name] - learning_rate * grads[name]
@@ -532,7 +433,7 @@ class OTI(EarlyTrain):
 
         return processes
 
-    def single_gpu_calculate_scores(
+    def _single_gpu_calculate_scores(
         self,
         best_params,
         init_params,
@@ -555,7 +456,7 @@ class OTI(EarlyTrain):
 
         # Calculate scores
         for epoch in range(self.epochs):
-            scores += self.calculate_scores_on_device(
+            scores += self._calculate_scores_on_device(
                 device_id,
                 [epoch],
                 best_params,
@@ -566,7 +467,7 @@ class OTI(EarlyTrain):
 
         return scores
 
-    def multi_gpu_calculate_scores(
+    def _multi_gpu_calculate_scores(
         self,
         best_params,
         use_regularization=False,
@@ -576,7 +477,7 @@ class OTI(EarlyTrain):
         """Calculate scores using multiple GPUs with multiple workers per GPU."""
         raise NotImplementedError("Multi-GPU support is not implemented yet")
 
-    def calculate_scores_on_device(
+    def _calculate_scores_on_device(
         self,
         device_id: int,
         epochs_to_process: list,
@@ -671,6 +572,23 @@ class OTI(EarlyTrain):
         epoch: int,
         train_indices: np.ndarray,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Processes a batch of data during training.
+        Args:
+            inputs (torch.Tensor): The input data for the batch.
+            targets (torch.Tensor): The target labels for the batch.
+            batch_idx (int): The index of the current batch.
+            best_params (dict): The best parameters found so far.
+            epoch_lr (float): The learning rate for the current epoch.
+            device (torch.device): The device to run the computations on.
+            use_regularization (bool): Whether to use regularization.
+            worker_name (str): The name of the worker processing the batch.
+            epoch (int): The current epoch number.
+            train_indices (np.ndarray): The indices of the training data.
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the scores and the batch indices tensor.
+        """
+
         batch_start = batch_idx * self.args.selection_batch
         batch_end = min((batch_idx + 1) * self.args.selection_batch, len(train_indices))
         batch_indices = train_indices[batch_start:batch_end]
@@ -705,6 +623,19 @@ class OTI(EarlyTrain):
         device: torch.device,
         batch_indices: np.ndarray,
     ) -> torch.Tensor:
+        """
+        Computes the scores based on the difference between the current model parameters
+        and the best parameters, optionally using regularization.
+        Args:
+            best_params (dict): Dictionary containing the best parameters of the model.
+            epoch_lr (float): Learning rate for the current epoch.
+            use_regularization (bool): Flag indicating whether to use regularization.
+            device (torch.device): The device on which tensors should be allocated.
+            batch_indices (np.ndarray): Array of batch indices.
+        Returns:
+            torch.Tensor: Tensor containing the computed scores.
+        """
+
         initial_distances = torch.zeros(len(batch_indices), device=device)
         pseudo_distances = torch.zeros(len(batch_indices), device=device)
         for name, param in self.model.named_parameters():
@@ -728,16 +659,7 @@ class OTI(EarlyTrain):
             else initial_distances - pseudo_distances
         )
 
-    # Learning Rate Methods
-    def get_epoch_lr(self, epoch):
-        """Retrieve the learning rate from model's optimizer"""
-        try:
-            return self.model_optimizer.param_groups[0]["lr"]
-        except (AttributeError, IndexError, KeyError):
-            self.logger.error("Failed to retrieve learning rate from model's optimizer")
-            return 1.0
-
-    def load_scores(self):
+    def _load_scores(self):
         """Load pre-computed scores from file"""
         scores_path = os.path.join(self.args.save_path, "oti_scores.pkl")
         if not os.path.exists(scores_path):
@@ -761,19 +683,30 @@ class OTI(EarlyTrain):
             dict: A dictionary containing the selected indices and their scores.
         """
 
-        score_array, indices = self.get_score(
+        score_array, indices = self._get_score(
             use_regularization, use_learning_rate, use_sliding_window
         )
 
         # Create DataFrame with scores
-        df, top_k, selected_indices = self.select_top_k_scores(score_array, indices)
+        df, top_k, selected_indices = self._select_top_k_scores(score_array, indices)
 
         # Save selected indices and their scores
-        self.save_selected_scores(score_array, df, top_k, selected_indices)
+        self._save_selected_scores(score_array, df, top_k, selected_indices)
 
         return {"indices": selected_indices, "scores": score_array}
 
-    def save_selected_scores(self, score_array, df, top_k, selected_indices):
+    def _save_selected_scores(self, score_array, df, top_k, selected_indices):
+        """
+        Save the selected scores to a CSV file and log the details.
+        Parameters:
+        score_array (numpy.ndarray): Array of scores from which the top_k scores are selected.
+        df (pandas.DataFrame): DataFrame containing the data with an "index" column.
+        top_k (int): Number of top scores to select.
+        selected_indices (list or numpy.ndarray): Indices of the selected top_k scores.
+        Returns:
+        None
+        """
+
         selected_df = df[df["index"].isin(selected_indices)]
         selected_csv_path = os.path.join(self.args.save_path, "oti_selected_scores.csv")
         selected_df.to_csv(selected_csv_path, index=False)
@@ -782,7 +715,19 @@ class OTI(EarlyTrain):
         self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
         self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
 
-    def select_top_k_scores(self, score_array, indices):
+    def _select_top_k_scores(self, score_array, indices):
+        """
+        Select the top-k scores from the given score array and indices, save the results to a CSV file,
+        and return the DataFrame, top-k value, and selected indices.
+        Args:
+            score_array (np.ndarray): Array of scores.
+            indices (np.ndarray): Array of indices corresponding to the scores.
+        Returns:
+            pd.DataFrame: DataFrame containing indices and scores sorted in descending order.
+            int: The number of top-k samples selected.
+            np.ndarray: Array of selected indices based on the top-k scores.
+        """
+
         df = pd.DataFrame({"index": indices, "score": score_array})
 
         # Sort DataFrame by score in descending order
@@ -798,7 +743,22 @@ class OTI(EarlyTrain):
         selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
         return df, top_k, selected_indices
 
-    def get_score(self, use_regularization, use_learning_rate, use_sliding_window):
+    def _get_score(self, use_regularization, use_learning_rate, use_sliding_window):
+        """
+        Computes and returns the scores based on the specified mode.
+        Parameters:
+        use_regularization (bool): Flag to indicate whether to use regularization in score calculation.
+        use_learning_rate (bool): Flag to indicate whether to use learning rate in score calculation.
+        use_sliding_window (bool): Flag to indicate whether to use sliding window in score calculation.
+        Returns:
+        tuple: A tuple containing:
+            - score_array (numpy.ndarray): The computed scores as a numpy array.
+            - indices (numpy.ndarray): The indices of the training data as a numpy array.
+        Raises:
+        ValueError: If the mode is invalid or if the best parameters are not available.
+        FileNotFoundError: If the stored parameters file is not found in "stored" mode.
+        """
+
         if self.mode == "full":
             self.before_run()
             self.run()  # Run the training process
@@ -809,7 +769,7 @@ class OTI(EarlyTrain):
                 raise ValueError(
                     "self.best_params is None - model has not been trained yet"
                 )
-            scores = self.calculate_scores(
+            scores = self._calculate_scores(
                 use_regularization, use_learning_rate, use_sliding_window
             )
         elif self.mode == "stored":
@@ -818,14 +778,14 @@ class OTI(EarlyTrain):
                 if self.best_params is None:
                     self.logger.error("Failed to load best parameters from stored data")
                     raise ValueError("Failed to load best parameters from stored data")
-                scores = self.calculate_scores(
+                scores = self._calculate_scores(
                     use_regularization, use_learning_rate, use_sliding_window
                 )
             except FileNotFoundError as e:
                 self.logger.error(f"Error loading stored data: {str(e)}")
                 raise
         elif self.mode == "scores":
-            scores = self.load_scores()
+            scores = self._load_scores()
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -833,34 +793,6 @@ class OTI(EarlyTrain):
         score_array = scores.detach().cpu().numpy()
         indices = torch.arange(self.n_train).cpu().numpy()
         return score_array, indices
-
-    # utility methods
-    def verify_saved_lr(self, save_path, num_epochs):
-        self.logger.info("[OTI] Starting learning rate verification...")
-        for epoch in range(num_epochs):
-            epoch_file = os.path.join(save_path, f"epoch_{epoch}_data.pkl")
-            if not os.path.exists(epoch_file):
-                self.logger.warning(f"[OTI] Warning: File not found for epoch {epoch}")
-                continue
-
-            try:
-                with open(epoch_file, "rb") as f:
-                    epoch_data = torch.load(f, weights_only=True)
-            except Exception as e:
-                self.logger.error(
-                    f"[OTI] Error reading file for epoch {epoch}: {str(e)}"
-                )
-                continue
-
-            if "learning_rate" not in epoch_data:
-                self.logger.warning(
-                    f"[OTI] Warning: Learning rate not found in data for epoch {epoch}"
-                )
-            else:
-                lr = epoch_data["learning_rate"]
-                self.logger.info(f"[OTI] Epoch {epoch} learning rate: {lr}")
-
-        self.logger.info("[OTI] Learning rate verification completed.")
 
 
 # Add OTI to SELECTION_METHODS
