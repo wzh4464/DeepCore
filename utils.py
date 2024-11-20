@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 16th November 2024 11:40:32 am
+# Last Modified: Monday, 18th November 2024 11:57:24 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -11,7 +11,10 @@
 # ----------		------	---------------------------------------------------------
 ###
 
+import numpy as np
+import pandas as pd
 import time, torch
+from typing import Dict
 from argparse import ArgumentTypeError
 from prefetch_generator import BackgroundGenerator
 from datetime import datetime
@@ -262,44 +265,44 @@ class DataLoaderX(torch.utils.data.DataLoader):
 def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None):
     """
     Setup logging configuration with exception handling
-    
+
     Args:
         log_dir (str): Directory to store log files
         log_level: Logging level
-        
+
     Returns:
         logger: Configured logger instance
     """
     # 确保日志目录存在
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    
+
     # 生成唯一的日志文件名
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if log_name:
         log_file = os.path.join(log_dir, f"{log_name}_{timestamp}.log")
     else:
         log_file = os.path.join(log_dir, f"run_{timestamp}.log")
-    
+
     # 配置根日志记录器
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             # 文件处理器
-            logging.FileHandler(log_file, mode='w', encoding='utf-8'),
+            logging.FileHandler(log_file, mode="w", encoding="utf-8"),
             # 控制台处理器
-            logging.StreamHandler(sys.stdout)
-        ]
+            logging.StreamHandler(sys.stdout),
+        ],
     )
-    
+
     # 设置全局异常处理器
     sys.excepthook = handle_exception
-    
+
     # 创建并配置logger
     logger = logging.getLogger(__name__)
     logger.info(f"Logging setup completed. Log file: {log_file}")
-    
+
     return logger
 
 
@@ -433,3 +436,104 @@ class MemoryMonitor:
             json.dump(summary, f, indent=4)
 
         self.logger.info(f"Memory usage summary saved to {summary_file}")
+
+
+class ScoreTracker:
+    """
+    A class to track scores across multiple experiments with different seeds.
+    """
+
+    def __init__(self, n_samples: int, save_path: str):
+        """
+        Initialize the score tracker.
+
+        Args:
+            n_samples: Number of samples in the dataset
+            save_path: Directory to save the results
+        """
+        self.n_samples = n_samples
+        self.save_path = save_path
+        self.scores_by_seed: Dict[int, np.ndarray] = {}
+        self.current_exp = 0
+
+    def add_scores(self, scores: np.ndarray, seed: int):
+        """
+        Add scores for a specific seed.
+
+        Args:
+            scores: Array of scores for each sample
+            seed: Random seed used for the experiment
+        """
+        self.scores_by_seed[seed] = scores
+        self.current_exp += 1
+
+    def compute_statistics(self) -> Dict[str, np.ndarray]:
+        """
+        Compute statistics across all experiments.
+
+        Returns:
+            Dictionary containing mean and variance of scores
+        """
+        all_scores = np.stack(list(self.scores_by_seed.values()))
+
+        return {
+            "mean": np.mean(all_scores, axis=0),
+            "variance": np.var(all_scores, axis=0),
+            "std": np.std(all_scores, axis=0),
+        }
+
+    def save_results(self):
+        """Save all results to CSV files."""
+        # Save individual experiment scores
+        for seed, scores in self.scores_by_seed.items():
+            df = pd.DataFrame(
+                {"index": np.arange(self.n_samples), "score": scores, "seed": seed}
+            )
+            df.to_csv(
+                os.path.join(self.save_path, f"scores_seed_{seed}.csv"), index=False
+            )
+
+        # Save statistics
+        stats = self.compute_statistics()
+        df_stats = pd.DataFrame(
+            {
+                "index": np.arange(self.n_samples),
+                "mean_score": stats["mean"],
+                "score_variance": stats["variance"],
+                "score_std": stats["std"],
+            }
+        )
+        df_stats.to_csv(
+            os.path.join(self.save_path, "score_statistics.csv"), index=False
+        )
+
+        # Save combined results
+        all_scores = []
+        for seed, scores in self.scores_by_seed.items():
+            df = pd.DataFrame(
+                {"index": np.arange(self.n_samples), "score": scores, "seed": seed}
+            )
+            all_scores.append(df)
+
+        df_combined = pd.concat(all_scores, ignore_index=True)
+        df_combined.to_csv(os.path.join(self.save_path, "all_scores.csv"), index=False)
+
+    def plot_score_distributions(self) -> Dict[str, torch.Tensor]:
+        """
+        Create visualizations of score distributions and save them.
+
+        Returns:
+            Dictionary containing plot data
+        """
+        stats = self.compute_statistics()
+        indices = np.arange(self.n_samples)
+
+        # Sort by mean score
+        sort_idx = np.argsort(stats["mean"])[::-1]
+
+        return {
+            "indices": indices[sort_idx],
+            "mean_scores": stats["mean"][sort_idx],
+            "std_scores": stats["std"][sort_idx],
+            "variance_scores": stats["variance"][sort_idx],
+        }
