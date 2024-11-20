@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 16th November 2024 3:42:46 pm
+# Last Modified: Monday, 18th November 2024 8:43:16 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -287,6 +287,38 @@ def parse_args():
         "--oti_use_sliding_window",
         action="store_true",
         help="Use sliding window in OTI score calculation",
+    )
+
+    # 新增 eps_min 和 eps_max delta_min delta_max delta_step
+    parser.add_argument(
+        "--eps_min",
+        type=float,
+        default=0.1,
+        help="Minimum threshold for loss change",
+    )
+    parser.add_argument(
+        "--eps_max",
+        type=float,
+        default=0.05,
+        help="Maximum threshold for loss change",
+    )
+    parser.add_argument(
+        "--delta_min",
+        type=float,
+        default=0.1,
+        help="Minimum threshold for parameter change",
+    )
+    parser.add_argument(
+        "--delta_max",
+        type=float,
+        default=0.05,
+        help="Maximum threshold for parameter change",
+    )
+    parser.add_argument(
+        "--delta_step",
+        type=float,
+        default=0.01,
+        help="Step size for parameter change",
     )
 
     parser.add_argument(
