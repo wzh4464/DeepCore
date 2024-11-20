@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 4:10:02 pm
+# Last Modified: Tuesday, 19th November 2024 8:03:52 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -270,8 +270,8 @@ class AD_OTI(OTI):
 
         # 计算批次伪参数张量
         eta_t1 = self.get_lr()
-        batch_pseudo_params_tensor = self._batch_compute_pseudo_params(
-            theta_t1_prev, gradients_tensor, eta_t1
+        batch_pseudo_params_tensor = (
+            theta_t1_prev.unsqueeze(0) - eta_t1 * gradients_tensor
         )
 
         # 计算估值
@@ -433,25 +433,6 @@ class AD_OTI(OTI):
         # 确保没有梯度计算图附加到输出
         return all_grads.detach()
 
-    def _batch_compute_pseudo_params(
-        self, theta_t1_prev_tensor, gradients_tensor, eta_t1
-    ):
-        """
-        使用张量运算计算批次伪参数。
-
-        Args:
-            theta_t1_prev_tensor (torch.Tensor): 上一时刻的参数张量
-            gradients_tensor (torch.Tensor): 批次梯度张量 [B, N]
-            eta_t1 (float): 学习率
-
-        Returns:
-            torch.Tensor: 批次伪参数张量 [B, N]
-        """
-        pseudo_params_tensor = (
-            theta_t1_prev_tensor.unsqueeze(0) - eta_t1 * gradients_tensor
-        )
-        return pseudo_params_tensor
-
     def _batch_compute_valuations(
         self, theta_t2_tensor, theta_t1_prev_tensor, batch_pseudo_params_tensor
     ):
@@ -472,8 +453,7 @@ class AD_OTI(OTI):
         u = theta_t2_tensor.unsqueeze(0) - batch_pseudo_params_tensor  # [B, N]
         u_norm = torch.norm(u, dim=1)  # [B]
 
-        v_i_t1 = (delta_theta_norm - u_norm) / (delta_theta_norm + u_norm)
-        return v_i_t1
+        return (delta_theta_norm - u_norm) / (delta_theta_norm + u_norm)
 
     def dict_add_subtract(self, dict1, dict2, operation="add", device="cuda"):
         """
