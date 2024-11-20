@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 11:07:25 am
+# Last Modified: Monday, 18th November 2024 4:10:02 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -133,23 +133,18 @@ class AD_OTI(OTI):
         self.before_run()
 
         # Initialize train_loader and iterator if not exists
-        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
-            self.logger.info("Train loader or iterator not found. Reinitializing.")
-            self.train_loader, self.train_indices = self._get_train_loader()
-            self.train_iterator = iter(self.train_loader)
+        self._initialize_data_loader()
 
         # Initialize data structures
-        v_cumulative = torch.zeros(len(self.dst_train), device=self.args.device)
-        delta = self.delta
-        Q_ref = deque()
-        Q_theta = deque()
-        T = self.epochs * len(self.train_loader)
-        L_prev = None
-
-        self.logger.info("Starting main loop.")
-        self.logger.info(
-            f"Epochs: {self.epochs}, Batches: {len(self.train_loader)}, Total steps: {T}"
+        v_cumulative, delta, Q_ref, Q_theta, T, L_prev = (
+            self.initialize_data_structures()
         )
+        # v_cumulative: torch.Tensor, cumulative valuations for each sample
+        # delta: int, window size
+        # Q_ref: deque, queue for reference pairs (t, t')
+        # Q_theta: deque, queue for model parameters at each step
+        # T: int, total number of steps
+        # L_prev: float, previous loss
 
         # Initialize model state
 
@@ -192,56 +187,52 @@ class AD_OTI(OTI):
             )
 
             # Process completed reference pairs
-            while Q_ref and Q_ref[0][1] == t:
-                t_1, t_2 = Q_ref.popleft()
-                self.logger.debug("Processing reference pair (t1=%d, t2=%d).", t_1, t_2)
-                # Retrieve corresponding model parameters
-                theta_t2 = next((theta for step, theta in Q_theta if step == t_2), None)
-                theta_t1_prev = next(
-                    (theta for step, theta in Q_theta if step == t_1 - 1), None
+            self.process_reference_pairs(v_cumulative, Q_ref, Q_theta, t, batch_indices)
+
+        return self.select_top_samples(v_cumulative)
+
+    def process_reference_pairs(self, v_cumulative, Q_ref, Q_theta, t, batch_indices):
+        """
+        Processes reference pairs and updates cumulative valuations.
+        This method processes reference pairs from the queue `Q_ref` where the second element of the pair matches the current time step `t`.
+        It retrieves the corresponding model parameters from `Q_theta`, ensures they are on the correct device, and updates the cumulative valuations.
+        Args:
+            v_cumulative (torch.Tensor): The cumulative valuations tensor to be updated.
+            Q_ref (collections.deque): A deque of reference pairs (t1, t2) to be processed.
+            Q_theta (collections.deque): A deque of tuples (step, theta) containing model parameters.
+            t (int): The current time step.
+            batch_indices (torch.Tensor): Indices of the current batch.
+        Returns:
+            None
+        """
+
+        while Q_ref and Q_ref[0][1] == t:
+            t_1, t_2 = Q_ref.popleft()
+            self.logger.debug("Processing reference pair (t1=%d, t2=%d).", t_1, t_2)
+            # Retrieve corresponding model parameters
+            theta_t2 = next((theta for step, theta in Q_theta if step == t_2), None)
+            theta_t1_prev = next(
+                (theta for step, theta in Q_theta if step == t_1 - 1), None
+            )
+
+            if theta_t2 is not None and theta_t1_prev is not None:
+                # Ensure parameters are on the correct device
+                theta_t2 = theta_t2.to(self.args.device)
+                theta_t1_prev = theta_t1_prev.to(self.args.device)
+
+                self.update_cumulative_valuations(
+                    v_cumulative, batch_indices, theta_t2, theta_t1_prev
                 )
 
-                if theta_t2 is not None and theta_t1_prev is not None:
-                    # Ensure parameters are on the correct device
-                    theta_t2 = theta_t2.to(self.args.device)
-                    theta_t1_prev = theta_t1_prev.to(self.args.device)
+            # Clean up old model parameters from the queue
+            Q_theta = deque(
+                [(step, theta) for step, theta in Q_theta if step >= t_1 - 1]
+            )
+            self.logger.info(
+                "Cleaned up model parameters from queue up to step %d.", t_1 - 1
+            )
 
-                    # Prepare batch data
-                    data_batch = torch.stack(
-                        [self.dst_train[idx][0] for idx in batch_indices]
-                    ).to(self.args.device)
-                    target_batch = torch.tensor(
-                        [self.dst_train[idx][1] for idx in batch_indices]
-                    ).to(self.args.device)
-
-                    # 计算批次梯度张量
-                    gradients_tensor = self._batch_compute_gradients(
-                        theta_t1_prev, data_batch, target_batch
-                    )
-
-                    # 计算批次伪参数张量
-                    eta_t1 = self.get_lr()
-                    batch_pseudo_params_tensor = self._batch_compute_pseudo_params(
-                        theta_t1_prev, gradients_tensor, eta_t1
-                    )
-
-                    # 计算估值
-                    v_i_t1 = self._batch_compute_valuations(
-                        theta_t2, theta_t1_prev, batch_pseudo_params_tensor
-                    )
-                    # 更新累积估值
-                    v_cumulative[batch_indices] += v_i_t1
-
-                # Clean up old model parameters from the queue
-                Q_theta = deque(
-                    [(step, theta) for step, theta in Q_theta if step >= t_1 - 1]
-                )
-                self.logger.info(
-                    "Cleaned up model parameters from queue up to step %d.", t_1 - 1
-                )
-
-        # After the main loop
-        # Select samples based on cumulative valuations
+    def select_top_samples(self, v_cumulative):
         k = int(self.fraction * len(self.dst_train))
         selected_indices = torch.topk(v_cumulative, k).indices.cpu().numpy()
         self.logger.debug("Selected indices: %s", selected_indices)
@@ -260,8 +251,56 @@ class AD_OTI(OTI):
         torch.save(result, save_path)
         self.logger.info(f"Saved selection results to {save_path}")
         self.logger.info("Selection process completed.")
-
         return result
+
+    def update_cumulative_valuations(
+        self, v_cumulative, batch_indices, theta_t2, theta_t1_prev
+    ):
+        data_batch = torch.stack([self.dst_train[idx][0] for idx in batch_indices]).to(
+            self.args.device
+        )
+        target_batch = torch.tensor(
+            [self.dst_train[idx][1] for idx in batch_indices]
+        ).to(self.args.device)
+
+        # 计算批次梯度张量
+        gradients_tensor = self._batch_compute_gradients(
+            theta_t1_prev, data_batch, target_batch
+        )
+
+        # 计算批次伪参数张量
+        eta_t1 = self.get_lr()
+        batch_pseudo_params_tensor = self._batch_compute_pseudo_params(
+            theta_t1_prev, gradients_tensor, eta_t1
+        )
+
+        # 计算估值
+        v_i_t1 = self._batch_compute_valuations(
+            theta_t2, theta_t1_prev, batch_pseudo_params_tensor
+        )
+        # 更新累积估值
+        v_cumulative[batch_indices] += v_i_t1
+
+    def initialize_data_structures(self):
+        v_cumulative = torch.zeros(len(self.dst_train), device=self.args.device)
+        delta = self.delta
+        Q_ref = deque()
+        Q_theta = deque()
+        T = self.epochs * len(self.train_loader)
+        L_prev = None
+
+        self.logger.info("Starting main loop.")
+        self.logger.info(
+            f"Epochs: {self.epochs}, Batches: {len(self.train_loader)}, Total steps: {T}"
+        )
+
+        return v_cumulative, delta, Q_ref, Q_theta, T, L_prev
+
+    def _initialize_data_loader(self):
+        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
+            self.logger.info("Train loader or iterator not found. Reinitializing.")
+            self.train_loader, self.train_indices = self._get_train_loader()
+            self.train_iterator = iter(self.train_loader)
 
     def _dict_to_tensor(self, param_dict):
         """
@@ -499,9 +538,7 @@ class AD_OTI(OTI):
                     # if 0, 2 then write arguments
                     if current_epoch == 0 and current_step == 2:
                         arg_line = f"delta_0={self.delta},delta_min={self.delta_min},delta_max={self.delta_max},delta_step={self.delta_step},eps_min={self.eps_min},eps_max={self.eps_max}\n"
-                        f.write(
-                            arg_line
-                        )
+                        f.write(arg_line)
                         self.logger.debug(arg_line)
                         f.write("epoch,step,L_t,dot_L,delta\n")
                     line = f"{current_epoch},{current_step},{L_t},{dot_L},{delta}\n"
