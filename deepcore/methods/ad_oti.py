@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 17th November 2024 12:26:49 pm
+# Last Modified: Sunday, 17th November 2024 9:09:44 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -15,38 +15,11 @@ import logging
 import torch
 from .selection_methods import SELECTION_METHODS
 from .oti import OTI
-from typing import Dict, override
+from typing import override
 from collections import deque, defaultdict
 import numpy as np
 import psutil
 
-def dict_add_subtract(dict1, dict2, operation='add', device='cuda'):
-    """
-    Perform element-wise addition or subtraction on two dictionaries containing tensors.
-
-    Args:
-        dict1 (dict): The first dictionary of tensors.
-        dict2 (dict): The second dictionary of tensors.
-        operation (str): 'add' for addition, 'sub' for subtraction.
-        device (str): The device to perform the operations on (default: 'cuda').
-
-    Returns:
-        dict: A new dictionary with the resulting tensors.
-    """
-    assert dict1.keys() == dict2.keys(), "Keys of the dictionaries must match."
-    
-    # Move tensors to the target device
-    dict1 = {k: v.to(device) for k, v in dict1.items()}
-    dict2 = {k: v.to(device) for k, v in dict2.items()}
-    
-    if operation == 'add':
-        result = {k: dict1[k] + dict2[k] for k in dict1}
-    elif operation == 'sub':
-        result = {k: dict1[k] - dict2[k] for k in dict1}
-    else:
-        raise ValueError("Unsupported operation. Use 'add' or 'sub'.")
-    
-    return result
 
 class AD_OTI(OTI):
     """
@@ -317,29 +290,6 @@ class AD_OTI(OTI):
         # 在最后一维连接所有展平的张量
         return torch.cat(flattened_tensors, dim=1), param_shapes, param_names
 
-    def _tensor_to_dict(self, tensor, param_shapes, param_names):
-        """
-        将单个张量转回参数字典。
-
-        Args:
-            tensor (torch.Tensor): 连接的张量
-            param_shapes (list): 原始参数形状列表
-            param_names (list): 参数名列表
-
-        Returns:
-            Dict[str, torch.Tensor]: 参数字典
-        """
-        param_dict = {}
-        start_idx = 0
-
-        for name, shape in zip(param_names, param_shapes):
-            flat_size = np.prod(shape[1:]) if len(shape) > 1 else 1
-            param_slice = tensor[:, start_idx : start_idx + flat_size]
-            param_dict[name] = param_slice.reshape(shape)
-            start_idx += flat_size
-
-        return param_dict
-
     def _batch_compute_valuations(
         self, theta_t2, theta_t1_prev, batch_pseudo_params, batch_indices
     ):
@@ -356,32 +306,44 @@ class AD_OTI(OTI):
             torch.Tensor: 批次样本的估值
         """
         # 使用dict_add_subtract进行张量计算，加速GPU利用
-        delta_theta = dict_add_subtract(theta_t2, theta_t1_prev, operation='sub', device=self.args.device)
+        delta_theta = self.dict_add_subtract(
+            theta_t2, theta_t1_prev, operation="sub", device=self.args.device
+        )
 
         # 将所有字典转换为张量
-        theta_t2_tensor, _, _ = self._dict_to_tensor(theta_t2) # torch.Size([1, 61706])
-        theta_t1_prev_tensor, _, _ = self._dict_to_tensor(theta_t1_prev) # torch.Size([1, 61706])
-        pseudo_params_tensor, _, _ = self._dict_to_tensor(batch_pseudo_params) # torch.Size([1, 15796736])
+        theta_t2_tensor, _, _ = self._dict_to_tensor(theta_t2)  # torch.Size([1, 61706])
+        theta_t1_prev_tensor, _, _ = self._dict_to_tensor(
+            theta_t1_prev
+        )  # torch.Size([1, 61706])
+        pseudo_params_tensor, _, _ = self._dict_to_tensor(
+            batch_pseudo_params
+        )  # torch.Size([1, 15796736])
 
         # 将伪参数reshape到匹配批次大小 dim 0 = batch_size
-        pseudo_params_tensor = pseudo_params_tensor.reshape(len(batch_indices), -1) # torch.Size([256, 61706])
+        pseudo_params_tensor = pseudo_params_tensor.reshape(
+            len(batch_indices), -1
+        )  # torch.Size([256, 61706])
 
         # 计算delta_theta
-        delta_theta = theta_t2_tensor - theta_t1_prev_tensor # torch.Size([1, 61706])
+        delta_theta = theta_t2_tensor - theta_t1_prev_tensor  # torch.Size([1, 61706])
 
         # 计算范数（在最后一维）
-        delta_theta_norm = torch.norm(delta_theta, dim=1) # torch.Size([1])
-        delta_theta_norm_expanded = delta_theta_norm.expand(len(batch_indices)) # torch.Size([256])
+        delta_theta_norm = torch.norm(delta_theta, dim=1)  # torch.Size([1])
+        delta_theta_norm_expanded = delta_theta_norm.expand(
+            len(batch_indices)
+        )  # torch.Size([256])
 
         # 扩展theta_t2以匹配批次大小 to torch.Size([256, 61706])
         theta_t2_expanded = theta_t2_tensor.expand(len(batch_indices), -1)
 
         # 计算u
-        u = theta_t2_expanded - pseudo_params_tensor # torch.Size([256, 61706])
-        u_norm = torch.norm(u, dim=1) # torch.Size([256])
+        u = theta_t2_expanded - pseudo_params_tensor  # torch.Size([256, 61706])
+        u_norm = torch.norm(u, dim=1)  # torch.Size([256])
 
         # 计算估值
-        v_i_t1 = (delta_theta_norm_expanded - u_norm) / (delta_theta_norm_expanded + u_norm)
+        v_i_t1 = (delta_theta_norm_expanded - u_norm) / (
+            delta_theta_norm_expanded + u_norm
+        )
 
         assert torch.all(v_i_t1 >= -1.0) and torch.all(
             v_i_t1 <= 1.0
@@ -389,50 +351,39 @@ class AD_OTI(OTI):
 
         return v_i_t1
 
+    def dict_add_subtract(self, dict1, dict2, operation="add", device="cuda"):
+        """
+        Perform element-wise addition or subtraction on two dictionaries containing tensors.
+
+        Args:
+            dict1 (dict): The first dictionary of tensors.
+            dict2 (dict): The second dictionary of tensors.
+            operation (str): 'add' for addition, 'sub' for subtraction.
+            device (str): The device to perform the operations on (default: 'cuda').
+
+        Returns:
+            dict: A new dictionary with the resulting tensors.
+        """
+        assert dict1.keys() == dict2.keys(), "Keys of the dictionaries must match."
+
+        # Move tensors to the target device
+        dict1 = {k: v.to(device) for k, v in dict1.items()}
+        dict2 = {k: v.to(device) for k, v in dict2.items()}
+
+        if operation == "add":
+            result = {k: dict1[k] + dict2[k] for k in dict1}
+        elif operation == "sub":
+            result = {k: dict1[k] - dict2[k] for k in dict1}
+        else:
+            raise ValueError("Unsupported operation. Use 'add' or 'sub'.")
+
+        return result
+
     def _ensure_on_device(self, params_dict):
         for name, param in params_dict.items():
             params_dict[name] = param.to(self.args.device)
 
         return params_dict
-
-    def _expand_parameters(self, params_dict, batch_size):
-        """
-        将参数字典中的每个参数扩展到指定的批次大小。
-
-        Args:
-            params_dict (Dict[str, torch.Tensor]): 参数字典
-            batch_size (int): 目标批次大小
-
-        Returns:
-            Dict[str, torch.Tensor]: 扩展后的参数字典，每个参数的第一维是batch_size
-        """
-        expanded_params = {}
-        for name, param in params_dict.items():
-            # 获取原始形状
-            orig_shape = param.shape
-            # 创建扩展形状：[batch_size, d1, d2, ...]
-            expand_shape = [batch_size] + [-1] * len(orig_shape)
-
-            try:
-                # 扩展参数
-                expanded = param.unsqueeze(0).expand(expand_shape)
-                expanded_params[name] = expanded
-
-                # 调试信息
-                self.logger.debug(
-                    f"Parameter {name}: "
-                    f"original shape {orig_shape}, "
-                    f"expanded shape {expanded.shape}"
-                )
-
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Failed to expand parameter {name} "
-                    f"from shape {orig_shape} to {expand_shape}"
-                )
-                raise e
-
-        return expanded_params
 
     def _adjust_window_size(self, t, L_prev, L_t, delta):
         """
@@ -529,66 +480,10 @@ class AD_OTI(OTI):
         """
         # 使用dict_add_subtract进行伪参数计算，确保在GPU上执行
         adjusted_gradients = {k: eta_t1 * v for k, v in gradients.items()}
-        pseudo_params = dict_add_subtract(theta_t1_prev, adjusted_gradients, operation='sub', device=self.args.device)
-        return self._ensure_on_device(pseudo_params)
-
-    def _batch_compute_u_i_t(self, theta_t2, pseudo_params):
-        """
-        Compute u_i_t for a batch in parallel.
-
-        Args:
-            theta_t2: Target model parameters
-            pseudo_params: Batch of pseudo parameters [B x param_shape]
-
-        Returns:
-            Dict containing u_i_t for the batch
-        """
-        return {
-            name: theta_t2[name].unsqueeze(0) - pseudo_params[name] for name in theta_t2
-        }
-
-    def _batch_compute_norm(self, param_dict):
-        """
-        Compute norms for a batch of parameters in parallel.
-
-        Args:
-            param_dict: Dict of parameter tensors [B x param_shape]
-
-        Returns:
-            torch.Tensor: Batch of norms [B]
-        """
-        return torch.sqrt(
-            sum(
-                torch.sum(p**2, dim=tuple(range(1, p.dim())))
-                for p in param_dict.values()
-            )
+        pseudo_params = self.dict_add_subtract(
+            theta_t1_prev, adjusted_gradients, operation="sub", device=self.args.device
         )
-
-    def _compute_norm_dict(
-        self, delta_theta: Dict[str, torch.Tensor]
-    ) -> Dict[str, float]:
-        """
-        计算给定参数字典中每个参数的范数。
-
-        Args:
-            delta_theta (Dict[str, torch.Tensor]): 参数字典。
-
-        Returns:
-            Dict[str, float]: 参数范数字典。
-        """
-        return {name: torch.norm(param).item() for name, param in delta_theta.items()}
-
-    def _calculate_loss_from_theta(self, params, inputs, targets):
-        """Calculate loss given a set of parameters."""
-        self.logger.debug("Calculating loss from theta.")
-        self.model.load_state_dict(params)
-        self.model.eval()  # Set model to evaluation mode
-        with torch.no_grad():
-            outputs = self.model(inputs)
-            loss = self.criterion(outputs, targets)
-        self.model.train()  # Restore to training mode
-        self.logger.debug("Calculated loss: %.4f", loss.item())
-        return loss
+        return self._ensure_on_device(pseudo_params)
 
     def _monitor_resources(self):
         """Monitor GPU and CPU memory usage."""
@@ -696,41 +591,6 @@ class AD_OTI(OTI):
             self.scheduler.step()
             self.logger.debug("Scheduler step completed.")
         self.logger.debug("Training step completed.")
-
-    def compute_gradient(
-        self,
-        params: Dict[str, torch.Tensor],
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Compute gradient of loss with respect to parameters.
-
-        Args:
-            params: Model parameters
-            inputs: Input data
-            targets: Target labels
-
-        Returns:
-            Dict containing gradients for each parameter
-        """
-        # 确保参数在GPU上
-        params = {k: v.to(self.args.device) for k, v in params.items()}
-        self.logger.debug("Starting gradient computation.")
-        self.model.load_state_dict(params)
-        self.model.zero_grad()
-
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        loss.backward()
-        self.logger.debug("Backward pass completed.")
-
-        gradients = {
-            name: param.grad.cpu().clone().detach()
-            for name, param in self.model.named_parameters()
-        }
-        self.logger.debug("[AD_OTI] Gradient computation completed.")
-        return gradients
 
 
 SELECTION_METHODS["AD_OTI"] = AD_OTI
