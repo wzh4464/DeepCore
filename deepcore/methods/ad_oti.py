@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 14th November 2024 4:01:20 pm
+# Last Modified: Thursday, 14th November 2024 9:58:52 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -16,15 +16,16 @@ import os
 import torch
 from .selection_methods import SELECTION_METHODS
 from .oti import OTI
-from typing import Dict, List, Tuple, Optional, override
-from collections import defaultdict
+from typing import Dict, List, override
+from collections import deque, defaultdict
 import numpy as np
 import time
+import psutil
 
 
 class AD_OTI(OTI):
     """
-    AD_OTI: adptive version of OTI
+    AD_OTI: Adaptive version of OTI with optimized training and parameter management.
     """
 
     def __init__(
@@ -44,7 +45,7 @@ class AD_OTI(OTI):
         **kwargs,
     ):
         """
-        Initialize AD_OTI with LiveVal parameters
+        Initialize AD_OTI with LiveVal parameters.
 
         Args:
             dst_train: Training dataset
@@ -68,7 +69,7 @@ class AD_OTI(OTI):
         )
 
         # LiveVal hyperparameters
-        self.delta_0 = delta_0
+        self.delta = delta_0
         self.delta_min = delta_min
         self.delta_max = delta_max
         self.delta_step = delta_step
@@ -76,93 +77,25 @@ class AD_OTI(OTI):
         self.eps_max = eps_max
 
         # Initialize storage for parameters and valuations
-        self.stored_params = {}  # Store model parameters at each step
+        # Each entry in param_queue will be a tuple:
+        # (t, params, inputs, targets, batch_indices, learning_rate)
+        self.param_queue = deque(
+            maxlen=self.delta_max
+        )  # FIFO queue for parameters and states
         self.valuations = defaultdict(float)  # Cumulative valuations
         self.time_valuations = defaultdict(list)  # Time series of valuations
 
         # Initialize state storage
-        self.stored_state = {}
         self.peak_cpu_memory = 0
         self.peak_gpu_memory = 0
 
-        # logger
+        # Logger
         self.logger = logging.getLogger(__class__.__name__)
-
-    def store_params(self, step: int) -> None:
-        """Store current model parameters for a given step."""
-        self.stored_params[step] = {
-            name: param.cpu().clone().detach()
-            for name, param in self.model.state_dict().items()
-        }
-
-    def compute_loss_change(
-        self,
-        theta_t_plus_delta: Dict[str, torch.Tensor],
-        theta_t_minus_1: Dict[str, torch.Tensor],
-        batch_inputs: torch.Tensor,
-        batch_targets: torch.Tensor,
-        delta: int,
-    ) -> float:
-        """
-        Compute loss change between two parameter sets.
-
-        Args:
-            theta_t_plus_delta: Parameters at t + delta
-            theta_t_minus_1: Parameters at t - 1
-            batch_inputs: Input data batch
-            batch_targets: Target labels
-            delta: Window size
-
-        Returns:
-            float: Change in loss divided by delta
-        """
-        loss_1 = self._calculate_loss_from_theta(
-            theta_t_plus_delta, batch_inputs, batch_targets
-        )
-        loss_2 = self._calculate_loss_from_theta(
-            theta_t_minus_1, batch_inputs, batch_targets
-        )
-        return (loss_1.item() - loss_2.item()) / delta
-
-    def _calculate_loss_from_theta(self, arg0, batch_inputs, batch_targets):
-        # Load and compute loss with theta_t_plus_delta
-        self.model.load_state_dict(arg0)
-        outputs_1 = self.model(batch_inputs)
-        return self.criterion(outputs_1, batch_targets)
-
-    def compute_gradient(
-        self,
-        params: Dict[str, torch.Tensor],
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Compute gradient of loss with respect to parameters.
-
-        Args:
-            params: Model parameters
-            inputs: Input data
-            targets: Target labels
-
-        Returns:
-            Dict containing gradients for each parameter
-        """
-        self.model.load_state_dict(params)
-        self.model.zero_grad()
-
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        loss.backward()
-
-        return {
-            name: param.grad.cpu().clone().detach()
-            for name, param in self.model.named_parameters()
-        }
 
     @override
     def select(self, **kwargs):
         """
-        Implementation of Algorithm 3: LiveVal
+        Implementation of Algorithm 3: LiveVal with optimized training.
 
         Returns:
             dict: Selected indices and their scores
@@ -177,73 +110,106 @@ class AD_OTI(OTI):
 
         # Calculate total steps and initialize storage
         T = self.epochs * len(self.train_loader)  # Total training steps
+        self.logger.debug(f"Total steps: {T}")
         n_samples = len(self.dst_train)
-        self.stored_state = {}  # Clear any previous stored states
+        self.logger.debug(f"Total samples: {n_samples}")
+        self.param_queue.clear()  # Clear any previous stored parameters
 
-        # Start timing the score calculation
-        score_calculation_start = time.time()
+        # Save initial model parameters as A[0]
+        initial_params = {
+            name: param.cpu().clone().detach()
+            for name, param in self.model.state_dict().items()
+        }
+        initial_learning_rate = self.get_lr()
+        initial_inputs = None
+        initial_targets = None
+        initial_batch_indices = None
+        self.param_queue.appendleft(
+            (
+                0,
+                initial_params,
+                initial_inputs,
+                initial_targets,
+                initial_batch_indices,
+                initial_learning_rate,
+            )
+        )
 
-        # Line 1-2: Initialize valuations
+        # Initialize valuations
         v_cumulative = torch.zeros(n_samples, device=self.args.device)  # v_i^[0,T]
         v_time_series = [
             torch.zeros(n_samples, device=self.args.device) for _ in range(T)
         ]  # {v_i^[t]}
 
-        # Line 3: Initialize δ1
-        delta_t = self.delta_0
+        # Initialize window size
+        delta_t = self.delta
+
+        # Start timing the score calculation
+        score_calculation_start = time.time()
 
         try:
-            # Line 4: Main loop
+            # Main loop
             for t in range(1, T + 1):
                 # Line 5: Get current state (θt-1, ηt, Bt)
                 inputs, targets, batch_indices = self.get_current_batch()
-                # Store current state including batch data
-                self.store_state(t, inputs, targets, batch_indices)
-
-                # Line 6-19: Adaptive reference point selection
-                if t + delta_t <= T:
-                    # Train for delta_t steps to get θt-1+δt
-                    theta_t_plus_delta = self.train_for_steps(delta_t)
-
-                    # Line 8: Compute ΔL
-                    delta_L = (
-                        self._calculate_loss_from_theta(
-                            theta_t_plus_delta, inputs, targets
-                        )
-                        - self._calculate_loss_from_theta(
-                            self.stored_state[t]["parameters"], inputs, targets
-                        )
-                    ) / delta_t
-
-                    # Line 9-15: Update window size
-                    if abs(delta_L) < self.eps_min:
-                        delta_t = min(delta_t + self.delta_step, self.delta_max)
-                    elif abs(delta_L) > self.eps_max:
-                        delta_t = max(delta_t - self.delta_step, self.delta_min)
-
-                    # Line 16: Set reference parameters
-                    theta_ref = theta_t_plus_delta
-                elif T in self.stored_state:
-                    theta_ref = self.stored_state[T]["parameters"]
-
-                else:
-                    # If we don't have the final state yet, use current state
-                    theta_ref = self.stored_state[t]["parameters"]
-                # Line 20: Compute Δθt
-                delta_theta_t = {
-                    name: theta_ref[name] - self.stored_state[t]["parameters"][name]
-                    for name in theta_ref.keys()
-                }
-
-                # Line 21-25: Update valuations for current batch
-                self._compute_batch_valuations(
-                    t, theta_ref, delta_theta_t, v_time_series, v_cumulative
-                )
-
-                # Train for one step
                 inputs = inputs.to(self.args.device)
                 targets = targets.to(self.args.device)
-                self._train_step(inputs, targets)
+                
+                # Train for one step
+                current_learning_rate = self.get_lr() # ηt
+                self._train_step(inputs, targets) 
+
+                # Store current state parameters and other info in the queue
+                current_params = {
+                    name: param.cpu().clone().detach()
+                    for name, param in self.model.state_dict().items()
+                } # θ[t]
+                
+                self.param_queue.appendleft(
+                    (
+                        t,
+                        current_params,
+                        inputs.cpu(),
+                        targets.cpu(),
+                        batch_indices,
+                        current_learning_rate,
+                    )
+                )
+
+                # If we have enough steps to compute loss change
+                if t >= delta_t:
+                    ref_t = t - delta_t
+                    if ref_entry := next(
+                        (entry for entry in self.param_queue if entry[0] == ref_t),
+                        None,
+                    ):
+                        _, ref_params, ref_inputs, ref_targets, ref_batch_indices, _ = (
+                            ref_entry
+                        )
+                        # Compute loss change
+                        delta_L = self.compute_loss_change(
+                            ref_params, current_params, inputs, targets, delta_t
+                        )
+
+                        # Update window size based on delta_L
+                        if abs(delta_L) < self.eps_min:
+                            delta_t = min(delta_t + self.delta_step, self.delta_max)
+                        elif abs(delta_L) > self.eps_max:
+                            delta_t = max(delta_t - self.delta_step, self.delta_min)
+                    else:
+                        # This should not happen as we're maintaining the queue properly
+                        self.logger.warning(
+                            f"Reference parameters for t={ref_t} not found."
+                        )
+
+                # Compute valuations for the current step
+                self._compute_batch_valuations(t, v_time_series, v_cumulative)
+
+                # 移除t之前的所有param_queue元素
+                self.param_queue = deque(
+                    [entry for entry in self.param_queue if entry[0] >= t],
+                    maxlen=self.delta_max
+                )
 
                 # Optional: Log progress
                 if t % 100 == 0:
@@ -299,127 +265,63 @@ class AD_OTI(OTI):
 
         return result
 
-    def _train_step(self, inputs: torch.Tensor, targets: torch.Tensor) -> None:
+    def compute_loss_change(
+        self,
+        ref_params: Dict[str, torch.Tensor],
+        current_params: Dict[str, torch.Tensor],
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+        delta: int,
+    ) -> float:
         """
-        Perform a single training step.
-        Args:
-            inputs: Input batch
-            targets: Target batch
-        """
-        self.model.train()
-        self.model_optimizer.zero_grad()
-
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, targets)
-        loss.backward()
-
-        self.model_optimizer.step()
-        if self.scheduler:
-            self.scheduler.step()
-
-    def train_for_steps(self, num_steps: int) -> Dict[str, torch.Tensor]:
-        """
-        Train the model for a specified number of steps and return parameters.
+        Compute loss change between two parameter sets.
 
         Args:
-            num_steps: Number of training steps
+            ref_params: Parameters at t - delta
+            current_params: Parameters at t
+            inputs: Input data batch
+            targets: Target labels
+            delta: Window size
 
         Returns:
-            dict: Model parameters after training
+            float: Change in loss divided by delta
         """
-        original_params = {
-            name: param.cpu().clone().detach()
-            for name, param in self.model.state_dict().items()
-        }
+        loss_ref = self._calculate_loss_from_theta(ref_params, inputs, targets)
+        loss_current = self._calculate_loss_from_theta(current_params, inputs, targets)
+        return (loss_current.item() - loss_ref.item()) / delta
 
-        for _ in range(num_steps):
-            try:
-                inputs, targets, _ = next(self.train_iterator)
-            except StopIteration:
-                self.train_iterator = iter(self.train_loader)
-                inputs, targets, _ = next(self.train_iterator)
-
-            inputs = inputs.to(self.args.device)
-            targets = targets.to(self.args.device)
-            self._train_step(inputs, targets)
-
-        final_params = {
-            name: param.cpu().clone().detach()
-            for name, param in self.model.state_dict().items()
-        }
-
-        # Restore original parameters
-        self.model.load_state_dict(original_params)
-
-        return final_params
-
-    def _get_train_loader(self):
-        """Create and return training data loader."""
-        # 创建索引列表
-        list_of_train_idx = np.random.choice(
-            np.arange(self.n_train), self.n_pretrain_size, replace=False
-        )
-
-        # 创建一个包装数据集来返回索引
-        class IndexedDataset(torch.utils.data.Dataset):
-            def __init__(self, dataset, indices):
-                self.dataset = dataset
-                self.indices = indices
-
-            def __getitem__(self, idx):
-                true_idx = self.indices[idx]
-                data, target = self.dataset[true_idx]
-                return data, target, true_idx
-
-            def __len__(self):
-                return len(self.indices)
-
-        # 创建带索引的数据集
-        indexed_dataset = IndexedDataset(self.dst_train, list_of_train_idx)
-
-        # 创建 DataLoader
-        train_loader = torch.utils.data.DataLoader(
-            indexed_dataset,
-            batch_size=self.args.selection_batch,
-            shuffle=False,
-            num_workers=self.args.workers,
-            pin_memory=True,
-        )
-
-        return train_loader, list_of_train_idx
-
-    def get_current_batch(self):
-        """Get current batch of data with indices"""
-        # Initialize train_loader and iterator if not exists
-        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
-            self.train_loader, self.train_indices = self._get_train_loader()
-            self.train_iterator = iter(self.train_loader)
-
-        try:
-            # Get next batch from iterator
-            inputs, targets, batch_indices = next(self.train_iterator)
-        except StopIteration:
-            # If iterator is exhausted, create new one
-            self.train_iterator = iter(self.train_loader)
-            inputs, targets, batch_indices = next(self.train_iterator)
-
-        return inputs.to(self.args.device), targets.to(self.args.device), batch_indices
+    def _calculate_loss_from_theta(self, params, inputs, targets):
+        """Calculate loss given a set of parameters."""
+        self.model.load_state_dict(params)
+        self.model.eval()  # Set model to evaluation mode
+        with torch.no_grad():
+            outputs = self.model(inputs)
+            loss = self.criterion(outputs, targets)
+        self.model.train()  # Restore to training mode
+        return loss
 
     def _compute_batch_valuations(
         self,
         t: int,
-        theta_ref: Dict[str, torch.Tensor],
-        delta_theta_t: Dict[str, torch.Tensor],
         v_time_series: List[torch.Tensor],
         v_cumulative: torch.Tensor,
     ) -> None:
         """
-        Compute valuations for current batch
+        Compute valuations for current batch.
         """
-        # Get batch data directly from stored state
-        batch_indices = self.stored_state[t]["batch_indices"]
-        inputs = self.stored_state[t].get("inputs")
-        targets = self.stored_state[t].get("targets")
+        # Retrieve the current entry from param_queue
+        current_entry = next(
+            (entry for entry in self.param_queue if entry[0] == t), None
+        )
+        if not current_entry:
+            self.logger.warning(f"Current entry for t={t} not found in param_queue.")
+            return
+
+        _, _, inputs, targets, batch_indices, _ = current_entry
+
+        if inputs is None or targets is None or batch_indices is None:
+            # Initial step where these are not available
+            return
 
         # Update peak memory usage
         cpu_mem, gpu_mem = self._monitor_resources()
@@ -429,31 +331,34 @@ class AD_OTI(OTI):
         # Process each sample in the batch
         for i, idx in enumerate(batch_indices):
             # Get single sample
-            input_i = inputs[i : i + 1]  # Already a tensor with correct shape
-            target_i = targets[i : i + 1]  # Already a tensor with correct shape
+            input_i = inputs[i : i + 1].to(self.args.device)  # Move to device
+            target_i = targets[i : i + 1].to(self.args.device)  # Move to device
+
+            # Retrieve current parameters
+            current_params = current_entry[1]
 
             # Compute gradients
-            gradients = self.compute_gradient(
-                self.stored_state[t]["parameters"], input_i, target_i
-            )
+            gradients = self.compute_gradient(current_params, input_i, target_i)
 
             # Compute pseudo update (u_i^t)
-            learning_rate = self.stored_state[t]["learning_rate"]
+            learning_rate = current_entry[5]
             pseudo_params = {
-                name: self.stored_state[t]["parameters"][name]
-                - learning_rate * gradients[name]
-                for name in theta_ref
+                name: current_params[name] - learning_rate * gradients[name]
+                for name in current_params.keys()
             }
 
             # Compute u_i^t with the actual update formula
-            u_i_t = {name: theta_ref[name] - pseudo_params[name] for name in theta_ref}
+            u_i_t = {
+                name: current_params[name] - pseudo_params[name]
+                for name in current_params.keys()
+            }
 
             # Compute norms using torch.sqrt(sum of squares) for numerical stability
             def compute_stable_norm(param_dict):
                 squared_sum = sum(torch.sum(p * p).item() for p in param_dict.values())
-                return torch.sqrt(torch.tensor(squared_sum))
+                return torch.sqrt(torch.tensor(squared_sum, device=self.args.device))
 
-            delta_theta_norm = compute_stable_norm(delta_theta_t)
+            delta_theta_norm = compute_stable_norm(current_params)
             u_i_t_norm = compute_stable_norm(u_i_t)
 
             # Compute relative improvement and cap it to [0, 1]
@@ -463,7 +368,7 @@ class AD_OTI(OTI):
                     v_i_t, min=0.0, max=1.0
                 )  # Ensure valuation is in [0,1]
             else:
-                v_i_t = torch.tensor(0.0)
+                v_i_t = torch.tensor(0.0, device=self.args.device)
 
             # Optional: Add debug logging periodically
             if t % 100 == 0 and i == 0:
@@ -482,42 +387,116 @@ class AD_OTI(OTI):
         if torch.any(v_cumulative < 0):
             self.logger.warning(f"Negative valuations detected at step {t}")
 
-    def store_state(
-        self,
-        t: int,
-        inputs: torch.Tensor = None,
-        targets: torch.Tensor = None,
-        batch_indices: List[int] = None,
-    ) -> None:
-        """Store current model state (θt-1, ηt, Bt) as A[t]"""
-        self.stored_state[t] = {
-            "parameters": {
-                name: param.cpu().clone().detach()
-                for name, param in self.model.state_dict().items()
-            },
-            "learning_rate": self.get_lr(),
-            "batch_indices": batch_indices,
-            "inputs": inputs,
-            "targets": targets,
-        }
-
-        if t % 20 == 0:
-            self.logger.debug(f"Stored state at step {t} to self.stored_state")
-
     def _monitor_resources(self):
-        """监控 GPU 和 CPU 内存使用"""
-        import psutil
-        import torch
-
-        cpu_memory = psutil.Process().memory_info().rss / (1024 * 1024)
+        """Monitor GPU and CPU memory usage."""
+        cpu_memory = psutil.Process().memory_info().rss / (1024 * 1024)  # in MB
 
         if torch.cuda.is_available():
-            gpu_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            gpu_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)  # in MB
             torch.cuda.reset_peak_memory_stats()
         else:
             gpu_memory = 0
 
         return cpu_memory, gpu_memory
+
+    def _get_train_loader(self):
+        """Create and return training data loader."""
+        # Create a list of indices for training
+        list_of_train_idx = np.random.choice(
+            np.arange(self.n_train), self.n_pretrain_size, replace=False
+        )
+
+        # Create a dataset that returns data along with indices
+        class IndexedDataset(torch.utils.data.Dataset):
+            def __init__(self, dataset, indices):
+                self.dataset = dataset
+                self.indices = indices
+
+            def __getitem__(self, idx):
+                true_idx = self.indices[idx]
+                data, target = self.dataset[true_idx]
+                return data, target, true_idx
+
+            def __len__(self):
+                return len(self.indices)
+
+        # Create the indexed dataset
+        indexed_dataset = IndexedDataset(self.dst_train, list_of_train_idx)
+
+        # Create DataLoader
+        train_loader = torch.utils.data.DataLoader(
+            indexed_dataset,
+            batch_size=self.args.selection_batch,
+            shuffle=False,
+            num_workers=self.args.workers,
+            pin_memory=True,
+        )
+
+        return train_loader, list_of_train_idx
+
+    def get_current_batch(self):
+        """Get current batch of data with indices."""
+        # Initialize train_loader and iterator if not exists
+        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
+            self.train_loader, self.train_indices = self._get_train_loader()
+            self.train_iterator = iter(self.train_loader)
+
+        try:
+            # Get next batch from iterator
+            inputs, targets, batch_indices = next(self.train_iterator)
+        except StopIteration:
+            # If iterator is exhausted, create new one
+            self.train_iterator = iter(self.train_loader)
+            inputs, targets, batch_indices = next(self.train_iterator)
+
+        return inputs, targets, batch_indices
+
+    def _train_step(self, inputs: torch.Tensor, targets: torch.Tensor) -> None:
+        """
+        Perform a single training step.
+        Args:
+            inputs: Input batch
+            targets: Target batch
+        """
+        self.model.train()
+        self.model_optimizer.zero_grad()
+
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, targets)
+        loss.backward()
+
+        self.model_optimizer.step()
+        if self.scheduler:
+            self.scheduler.step()
+
+    def compute_gradient(
+        self,
+        params: Dict[str, torch.Tensor],
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute gradient of loss with respect to parameters.
+
+        Args:
+            params: Model parameters
+            inputs: Input data
+            targets: Target labels
+
+        Returns:
+            Dict containing gradients for each parameter
+        """
+        self.model.load_state_dict(params)
+        self.model.zero_grad()
+
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, targets)
+        loss.backward()
+
+        return {
+            name: param.grad.cpu().clone().detach()
+            for name, param in self.model.named_parameters()
+        }
 
 
 SELECTION_METHODS["AD_OTI"] = AD_OTI
