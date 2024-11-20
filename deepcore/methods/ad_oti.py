@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 19th November 2024 8:03:52 pm
+# Last Modified: Wednesday, 20th November 2024 11:23:18 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -137,7 +137,7 @@ class AD_OTI(OTI):
 
         # Initialize data structures
         v_cumulative, delta, Q_ref, Q_theta, T, L_prev = (
-            self.initialize_data_structures()
+            self._initialize_data_structures()
         )
         # v_cumulative: torch.Tensor, cumulative valuations for each sample
         # delta: int, window size
@@ -156,7 +156,7 @@ class AD_OTI(OTI):
 
         for t in range(1, T + 1):
             # Get current batch
-            inputs, targets, batch_indices = self.get_current_batch()
+            inputs, targets, batch_indices = self._get_current_batch()
             inputs = inputs.to(self.args.device)
             targets = targets.to(self.args.device)
 
@@ -187,11 +187,11 @@ class AD_OTI(OTI):
             )
 
             # Process completed reference pairs
-            self.process_reference_pairs(v_cumulative, Q_ref, Q_theta, t, batch_indices)
+            self._process_reference_pairs(v_cumulative, Q_ref, Q_theta, t, batch_indices)
 
-        return self.select_top_samples(v_cumulative)
+        return self._select_top_samples(v_cumulative)
 
-    def process_reference_pairs(self, v_cumulative, Q_ref, Q_theta, t, batch_indices):
+    def _process_reference_pairs(self, v_cumulative, Q_ref, Q_theta, t, batch_indices):
         """
         Processes reference pairs and updates cumulative valuations.
         This method processes reference pairs from the queue `Q_ref` where the second element of the pair matches the current time step `t`.
@@ -220,7 +220,7 @@ class AD_OTI(OTI):
                 theta_t2 = theta_t2.to(self.args.device)
                 theta_t1_prev = theta_t1_prev.to(self.args.device)
 
-                self.update_cumulative_valuations(
+                self._update_cumulative_valuations(
                     v_cumulative, batch_indices, theta_t2, theta_t1_prev
                 )
 
@@ -232,7 +232,7 @@ class AD_OTI(OTI):
                 "Cleaned up model parameters from queue up to step %d.", t_1 - 1
             )
 
-    def select_top_samples(self, v_cumulative):
+    def _select_top_samples(self, v_cumulative):
         k = int(self.fraction * len(self.dst_train))
         selected_indices = torch.topk(v_cumulative, k).indices.cpu().numpy()
         self.logger.debug("Selected indices: %s", selected_indices)
@@ -253,7 +253,7 @@ class AD_OTI(OTI):
         self.logger.info("Selection process completed.")
         return result
 
-    def update_cumulative_valuations(
+    def _update_cumulative_valuations(
         self, v_cumulative, batch_indices, theta_t2, theta_t1_prev
     ):
         data_batch = torch.stack([self.dst_train[idx][0] for idx in batch_indices]).to(
@@ -281,7 +281,7 @@ class AD_OTI(OTI):
         # 更新累积估值
         v_cumulative[batch_indices] += v_i_t1
 
-    def initialize_data_structures(self):
+    def _initialize_data_structures(self):
         v_cumulative = torch.zeros(len(self.dst_train), device=self.args.device)
         delta = self.delta
         Q_ref = deque()
@@ -455,7 +455,7 @@ class AD_OTI(OTI):
 
         return (delta_theta_norm - u_norm) / (delta_theta_norm + u_norm)
 
-    def dict_add_subtract(self, dict1, dict2, operation="add", device="cuda"):
+    def _dict_add_subtract(self, dict1, dict2, operation="add", device="cuda"):
         """
         Perform element-wise addition or subtraction on two dictionaries containing tensors.
 
@@ -598,7 +598,7 @@ class AD_OTI(OTI):
         )
         return train_loader, list_of_train_idx
 
-    def get_current_batch(self):
+    def _get_current_batch(self):
         """Get current batch of data with indices."""
         self.logger.debug("Fetching current batch.")
 
