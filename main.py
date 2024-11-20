@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 8:43:16 am
+# Last Modified: Monday, 18th November 2024 10:56:39 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -472,6 +472,25 @@ def initialize_dataset_and_model(args, checkpoint):
                 use_learning_rate=args.oti_use_learning_rate,
                 use_sliding_window=args.oti_use_sliding_window,
                 dst_test=dst_test,
+                **selection_args,
+            )
+        elif args.selection == "AD_OTI":
+            method = method_class(
+                dst_train,
+                args,
+                args.fraction,
+                args.seed,
+                num_gpus=args.num_gpus,
+                mode=args.oti_mode,
+                use_regularization=args.oti_use_regularization,
+                use_learning_rate=args.oti_use_learning_rate,
+                use_sliding_window=args.oti_use_sliding_window,
+                dst_test=dst_test,
+                eps_min=args.eps_min,
+                eps_max=args.eps_max,
+                delta_min=args.delta_min,
+                delta_max=args.delta_max,
+                delta_step=args.delta_step,
                 **selection_args,
             )
         else:

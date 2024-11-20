@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 9:45:39 am
+# Last Modified: Monday, 18th November 2024 11:07:25 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -85,10 +85,10 @@ class AD_OTI(OTI):
         )
 
         # LiveVal hyperparameters
-        self.delta = delta_0
-        self.delta_min = delta_min
-        self.delta_max = delta_max
-        self.delta_step = delta_step
+        self.delta = int(delta_0)
+        self.delta_min = int(delta_min)
+        self.delta_max = int(delta_max)
+        self.delta_step = int(delta_step)
         self.eps_min = eps_min
         self.eps_max = eps_max
 
@@ -492,11 +492,21 @@ class AD_OTI(OTI):
             )
 
             if self.args.log_level == "DEBUG":
-                # save to "savepath/L_{timestamps}.txt"
+                # save to "savepath/L_{timestamps}.csv"
                 with open(
-                    f"{self.args.save_path}/L_{self.args.timestamp}.txt", "a"
+                    f"{self.args.save_path}/L_{self.args.timestamp}.csv", "a"
                 ) as f:
-                    f.write(f"{current_epoch},{current_step},{L_t},{dot_L}\n")
+                    # if 0, 2 then write arguments
+                    if current_epoch == 0 and current_step == 2:
+                        arg_line = f"delta_0={self.delta},delta_min={self.delta_min},delta_max={self.delta_max},delta_step={self.delta_step},eps_min={self.eps_min},eps_max={self.eps_max}\n"
+                        f.write(
+                            arg_line
+                        )
+                        self.logger.debug(arg_line)
+                        f.write("epoch,step,L_t,dot_L,delta\n")
+                    line = f"{current_epoch},{current_step},{L_t},{dot_L},{delta}\n"
+                    f.write(line)
+                    self.logger.debug(line)
 
             if abs(dot_L) > self.eps_min:
                 delta = min(delta + self.delta_step, self.delta_max)
