@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 15th November 2024 12:03:47 pm
+# Last Modified: Saturday, 16th November 2024 3:42:46 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -299,6 +299,10 @@ def parse_args():
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # add args.timestamp
+    args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
     return args
 
 

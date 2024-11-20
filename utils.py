@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 15th November 2024 11:25:36 am
+# Last Modified: Saturday, 16th November 2024 11:40:32 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -19,6 +19,9 @@ import os
 import sys
 import logging
 import traceback
+import psutil
+import json
+from datetime import datetime
 
 
 class WeightedSubset(torch.utils.data.Subset):
@@ -322,3 +325,111 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
     # 记录异常
     logger.critical(f"Uncaught exception:\n{error_msg}")
+
+
+class MemoryMonitor:
+    """
+    A utility class to monitor and log CPU and GPU memory usage.
+    """
+
+    def __init__(self, save_path, method_name):
+        self.save_path = save_path
+        self.method_name = method_name
+        self.peak_cpu_memory = 0
+        self.peak_gpu_memory = 0
+        self.logger = logging.getLogger(__name__)
+
+        # Create memory logs directory if it doesn't exist
+        self.logs_dir = os.path.join(save_path, "memory_logs")
+        os.makedirs(self.logs_dir, exist_ok=True)
+
+        # Initialize log file
+        self.log_file = os.path.join(
+            self.logs_dir,
+            f'memory_usage_{method_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json',
+        )
+
+    def check_memory(self):
+        """
+        Check current CPU and GPU memory usage and update peaks if necessary.
+        Returns:
+            tuple: Current (CPU memory in MB, GPU memory in MB)
+        """
+        # Get CPU memory usage
+        process = psutil.Process()
+        cpu_memory = process.memory_info().rss / (1024 * 1024)  # Convert to MB
+        self.peak_cpu_memory = max(self.peak_cpu_memory, cpu_memory)
+
+        # Get GPU memory usage if available
+        gpu_memory = 0
+        if torch.cuda.is_available():
+            gpu_memory = torch.cuda.max_memory_allocated() / (
+                1024 * 1024
+            )  # Convert to MB
+            self.peak_gpu_memory = max(self.peak_gpu_memory, gpu_memory)
+            # Reset peak stats for next check
+            torch.cuda.reset_peak_memory_stats()
+
+        return cpu_memory, gpu_memory
+
+    def log_memory_usage(self, step=None, extra_info=None):
+        """
+        Log current memory usage to file with optional step information.
+
+        Args:
+            step (str, optional): Current step or phase of the process
+            extra_info (dict, optional): Additional information to log
+        """
+        cpu_memory, gpu_memory = self.check_memory()
+
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "method": self.method_name,
+            "current_cpu_memory_mb": round(cpu_memory, 2),
+            "peak_cpu_memory_mb": round(self.peak_cpu_memory, 2),
+            "current_gpu_memory_mb": round(gpu_memory, 2),
+            "peak_gpu_memory_mb": round(self.peak_gpu_memory, 2),
+        }
+
+        if step:
+            log_data["step"] = step
+
+        if extra_info:
+            log_data.update(extra_info)
+
+        # Append to log file
+        with open(self.log_file, "a") as f:
+            f.write(json.dumps(log_data) + "\n")
+
+        # Log to console
+        self.logger.info(
+            f"Memory Usage - CPU: {cpu_memory:.2f}MB (Peak: {self.peak_cpu_memory:.2f}MB), "
+            f"GPU: {gpu_memory:.2f}MB (Peak: {self.peak_gpu_memory:.2f}MB)"
+        )
+
+    def get_summary(self):
+        """
+        Get a summary of peak memory usage.
+
+        Returns:
+            dict: Summary of peak memory usage
+        """
+        return {
+            "method": self.method_name,
+            "peak_cpu_memory_mb": round(self.peak_cpu_memory, 2),
+            "peak_gpu_memory_mb": round(self.peak_gpu_memory, 2),
+        }
+
+    def save_summary(self):
+        """
+        Save peak memory usage summary to a separate file.
+        """
+        summary = self.get_summary()
+        summary_file = os.path.join(
+            self.logs_dir, f"memory_summary_{self.method_name}.json"
+        )
+
+        with open(summary_file, "w") as f:
+            json.dump(summary, f, indent=4)
+
+        self.logger.info(f"Memory usage summary saved to {summary_file}")
