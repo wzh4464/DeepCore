@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 20th November 2024 9:47:32 am
+# Last Modified: Wednesday, 20th November 2024 5:08:47 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -313,7 +313,10 @@ class OTI(EarlyTrain):
         Calculate scores by training in real-time and comparing parameters with best_params.
         """
         try:
-            best_params = self._load_best_params()
+            assert self.best_params is not None
+            self.logger.debug(
+                "[OTI] Best parameters found. Starting score calculation."
+            )
         except FileNotFoundError:
             self.logger.info(
                 "[OTI] Using the current model parameters as the best parameters."
@@ -330,7 +333,7 @@ class OTI(EarlyTrain):
             self.logger.info("[OTI] Using single GPU for score calculation")
             device_id = self.args.gpu[0]
             return self._single_gpu_calculate_scores(
-                best_params,
+                self.best_params,
                 init_params,
                 device_id,
                 use_regularization,
@@ -365,20 +368,31 @@ class OTI(EarlyTrain):
 
     def _get_train_loader(self):
         """Create and return training data loader."""
+        self.logger.info("Creating training data loader.")
+        # Create a list of indices for training
         list_of_train_idx = np.random.choice(
             np.arange(self.n_train), self.n_pretrain_size, replace=False
         )
 
-        # 修改 DataLoader，设置 num_workers=0 避免创建子进程
-        train_loader = torch.utils.data.DataLoader(
-            self.dst_train,
-            batch_sampler=torch.utils.data.BatchSampler(
-                list_of_train_idx, batch_size=self.args.selection_batch, drop_last=False
-            ),
-            num_workers=self.args.workers,  # 设置为0，不使用多进程加载数据
-            pin_memory=True,
+        # Create the indexed dataset
+        indexed_dataset = IndexedDataset(self.dst_train, list_of_train_idx)
+        self.logger.debug(
+            "IndexedDataset created with %d samples.", len(indexed_dataset)
         )
 
+        # Create DataLoader
+        train_loader = torch.utils.data.DataLoader(
+            indexed_dataset,
+            batch_size=self.args.selection_batch,
+            shuffle=False,
+            num_workers=self.args.workers,
+            pin_memory=True,
+        )
+        self.logger.info(
+            "Training data loader created with batch size %d and %d workers.",
+            self.args.selection_batch,
+            self.args.workers,
+        )
         return train_loader, list_of_train_idx
 
     def _init_multiprocessing(self):
@@ -506,12 +520,12 @@ class OTI(EarlyTrain):
                 epoch_lr = self._update_learning_rate(use_learning_rate, epoch)
                 self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
-                for batch_idx, (inputs, targets) in enumerate(train_loader):
+                for batch_ind, (inputs, targets, _) in enumerate(self.train_iterator):
                     inputs, targets = inputs.to(device), targets.to(device)
                     batch_scores, batch_indices = self._process_batch(
                         inputs,
                         targets,
-                        batch_idx,
+                        batch_ind,
                         best_params,
                         epoch_lr,
                         device,
@@ -533,11 +547,12 @@ class OTI(EarlyTrain):
         except Exception as e:
             self.logger.error(f"[{worker_name}] Error: {str(e)}")
             self.logger.error(f"[{worker_name}] Traceback: {traceback.format_exc()}")
-            if return_dict is not None:
-                return_dict[worker_id if worker_id is not None else device_id] = (
-                    torch.zeros(len(train_indices))
-                )
-            return torch.zeros(len(train_indices))
+            raise e
+            # if return_dict is not None:
+            #     return_dict[worker_id if worker_id is not None else device_id] = (
+            #         torch.zeros(len(train_indices))
+            #     )
+            # return torch.zeros(len(train_indices))
 
     def _setup_optimizer_scheduler(self, use_learning_rate: bool):
         if use_learning_rate:
@@ -683,6 +698,10 @@ class OTI(EarlyTrain):
             dict: A dictionary containing the selected indices and their scores.
         """
 
+        # Initialize data loader
+        self._initialize_data_loader()
+
+        # Calculate scores
         score_array, indices = self._get_score(
             use_regularization, use_learning_rate, use_sliding_window
         )
@@ -794,6 +813,51 @@ class OTI(EarlyTrain):
         indices = torch.arange(self.n_train).cpu().numpy()
         return score_array, indices
 
+    def _get_current_batch(self):
+        """Get current batch of data with indices."""
+        self.logger.debug("Fetching current batch.")
+
+        try:
+            # Get next batch from iterator
+            inputs, targets, batch_indices = next(self.train_iterator)
+            self.logger.debug("Fetched batch with indices: %s", batch_indices)
+        except StopIteration:
+            # If iterator is exhausted, create new one
+            self.logger.info("Train iterator exhausted. Reinitializing iterator.")
+            self.train_iterator = iter(self.train_loader)
+            inputs, targets, batch_indices = next(self.train_iterator)
+            self.logger.debug("Fetched batch with indices: %s", batch_indices)
+
+        return inputs, targets, batch_indices
+
+    def _initialize_data_loader(self):
+        """
+        Initializes the data loader for training.
+        Make sure:
+        - self.train_loader is initialized with the training data.
+        - self.train_indices is initialized with the indices of the training data.
+        - self.train_iterator is initialized with the iterator for the training loader.
+        """
+
+        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
+            self.logger.info("Train loader or iterator not found. Reinitializing.")
+            self.train_loader, self.train_indices = self._get_train_loader()
+            self.train_iterator = iter(self.train_loader)
+
 
 # Add OTI to SELECTION_METHODS
 SELECTION_METHODS["OTI"] = OTI
+
+
+class IndexedDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, indices):
+        self.dataset = dataset
+        self.indices = indices
+
+    def __getitem__(self, idx):
+        true_idx = self.indices[idx]
+        data, target = self.dataset[true_idx]
+        return data, target, true_idx
+
+    def __len__(self):
+        return len(self.indices)
