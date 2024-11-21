@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 20th November 2024 11:23:18 am
+# Last Modified: Wednesday, 20th November 2024 4:36:05 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -187,7 +187,9 @@ class AD_OTI(OTI):
             )
 
             # Process completed reference pairs
-            self._process_reference_pairs(v_cumulative, Q_ref, Q_theta, t, batch_indices)
+            self._process_reference_pairs(
+                v_cumulative, Q_ref, Q_theta, t, batch_indices
+            )
 
         return self._select_top_samples(v_cumulative)
 
@@ -295,12 +297,6 @@ class AD_OTI(OTI):
         )
 
         return v_cumulative, delta, Q_ref, Q_theta, T, L_prev
-
-    def _initialize_data_loader(self):
-        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
-            self.logger.info("Train loader or iterator not found. Reinitializing.")
-            self.train_loader, self.train_indices = self._get_train_loader()
-            self.train_iterator = iter(self.train_loader)
 
     def _dict_to_tensor(self, param_dict):
         """
@@ -555,65 +551,7 @@ class AD_OTI(OTI):
 
         return cpu_memory, gpu_memory
 
-    def _get_train_loader(self):
-        """Create and return training data loader."""
-        self.logger.info("Creating training data loader.")
-        # Create a list of indices for training
-        list_of_train_idx = np.random.choice(
-            np.arange(self.n_train), self.n_pretrain_size, replace=False
-        )
 
-        # Create a dataset that returns data along with indices
-        class IndexedDataset(torch.utils.data.Dataset):
-            def __init__(self, dataset, indices):
-                self.dataset = dataset
-                self.indices = indices
-
-            def __getitem__(self, idx):
-                true_idx = self.indices[idx]
-                data, target = self.dataset[true_idx]
-                return data, target, true_idx
-
-            def __len__(self):
-                return len(self.indices)
-
-        # Create the indexed dataset
-        indexed_dataset = IndexedDataset(self.dst_train, list_of_train_idx)
-        self.logger.debug(
-            "IndexedDataset created with %d samples.", len(indexed_dataset)
-        )
-
-        # Create DataLoader
-        train_loader = torch.utils.data.DataLoader(
-            indexed_dataset,
-            batch_size=self.args.selection_batch,
-            shuffle=False,
-            num_workers=self.args.workers,
-            pin_memory=True,
-        )
-        self.logger.info(
-            "Training data loader created with batch size %d and %d workers.",
-            self.args.selection_batch,
-            self.args.workers,
-        )
-        return train_loader, list_of_train_idx
-
-    def _get_current_batch(self):
-        """Get current batch of data with indices."""
-        self.logger.debug("Fetching current batch.")
-
-        try:
-            # Get next batch from iterator
-            inputs, targets, batch_indices = next(self.train_iterator)
-            self.logger.debug("Fetched batch with indices: %s", batch_indices)
-        except StopIteration:
-            # If iterator is exhausted, create new one
-            self.logger.info("Train iterator exhausted. Reinitializing iterator.")
-            self.train_iterator = iter(self.train_loader)
-            inputs, targets, batch_indices = next(self.train_iterator)
-            self.logger.debug("Fetched batch with indices: %s", batch_indices)
-
-        return inputs, targets, batch_indices
 
     def _train_step(
         self, inputs: torch.Tensor, targets: torch.Tensor, step: int, total_steps: int
