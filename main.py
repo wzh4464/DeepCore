@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 10:56:39 am
+# Last Modified: Friday, 22nd November 2024 9:47:45 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -495,7 +495,7 @@ def initialize_dataset_and_model(args, checkpoint):
             )
         else:
             method = method_class(
-                dst_train, args, args.fraction, args.seed, **selection_args
+                dst_train, args, args.fraction, args.seed, dst_test=dst_test,**selection_args
             )
 
         subset = method.select()
