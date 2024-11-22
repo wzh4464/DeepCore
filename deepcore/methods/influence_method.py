@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 10:25:43 am
+# Last Modified: Friday, 22nd November 2024 10:41:53 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -41,8 +41,8 @@ class InfluenceMethod(CoresetMethod):
         self.num_scores = args.num_scores if hasattr(args, "num_scores") else 100
         self.num_gpus = args.num_gpus if hasattr(args, "num_gpus") else 1
         # 固定随机种子
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
 
         # if num_gpus > 1: then use spawn method to create new processes
         if self.num_gpus > 1:
@@ -55,6 +55,11 @@ class InfluenceMethod(CoresetMethod):
         device = torch.device(
             f"cuda:{device_id}" if torch.cuda.is_available() else "cpu"
         )
+
+        # 设置随机种子
+        generator = torch.Generator()
+        generator.manual_seed(self.random_seed)
+
         model = nets.__dict__[self.model_class](
             self.args.channel,
             (self.num_classes),

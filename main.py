@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 9:47:45 am
+# Last Modified: Friday, 22nd November 2024 10:48:39 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -334,6 +334,14 @@ def parse_args():
 
     # add args.timestamp
     args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    # loo
+    parser.add_argument(
+        "--num_scores",
+        type=int,
+        default=100,
+        help="Number of scores to calculate for LOO",
+    )
 
     return args
 

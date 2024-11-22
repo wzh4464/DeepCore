@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 10:27:09 am
+# Last Modified: Friday, 22nd November 2024 10:51:35 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -64,8 +64,15 @@ class LOO(InfluenceMethod):
         selected_indices = np.argsort(influence_scores)[::-1][: self.coreset_size]
 
         self.logger.info(f"Selected indices: {selected_indices}")
-        # save the selected indices to csv file
-        np.savetxt("selected_indices.csv", selected_indices, delimiter=",")
+
+        self.logger.info(f"Selected scores: {influence_scores}")
+        # save loss values to csv file
+        np.savetxt(
+            f"{self.args.save_path}/loo_losses.csv",
+            influence_scores,
+            delimiter=",",
+            fmt="%0.6f",
+        )
 
         return {"indices": selected_indices, "scores": influence_scores}
 
