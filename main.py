@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 10:48:39 am
+# Last Modified: Friday, 22nd November 2024 3:07:30 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -28,7 +28,67 @@ import logging
 
 
 def parse_args():
-    """Parse command line arguments."""
+    """
+    Parse command line arguments for the DeepCore project.
+
+    Returns:
+        argparse.Namespace: Parsed command line arguments.
+
+    Command line arguments:
+        --dataset (str): Dataset to use (default: "CIFAR10").
+        --model (str): Model to use (default: "ResNet18").
+        --selection (str): Selection method (default: "uniform").
+        --num_exp (int): Number of experiments (default: 5).
+        --num_eval (int): Number of evaluating randomly initialized models (default: 10).
+        --epochs (int): Number of total epochs to run (default: 200).
+        --data_path (str): Dataset path (default: "data").
+        --gpu (int): GPU id to use (default: None).
+        --print_freq (int): Print frequency (default: 20).
+        --fraction (float): Fraction of data to be selected (default: 0.1).
+        --seed (int): Random seed (default: current time in milliseconds % 100000).
+        --workers (int): Number of data loading workers (default: 8).
+        --cross (str): Models for cross-architecture experiments (default: None).
+        --optimizer (str): Optimizer to use (default: "SGD").
+        --lr (float): Learning rate for updating network parameters (default: 0.1).
+        --min_lr (float): Minimum learning rate (default: 1e-4).
+        --momentum (float): Momentum (default: 0.9).
+        --weight_decay (float): Weight decay (default: 5e-4).
+        --nesterov (bool): If set, use Nesterov momentum (default: True).
+        --scheduler (str): Learning rate scheduler (default: "CosineAnnealingLR").
+        --gamma (float): Gamma value for StepLR (default: 0.5).
+        --step_size (float): Step size for StepLR (default: 50).
+        --batch (int): Mini-batch size (default: 256).
+        --train_batch (int): Batch size for training (default: None).
+        --selection_batch (int): Batch size for selection (default: None).
+        --test_interval (int): Number of training epochs between two test epochs (default: 1).
+        --test_fraction (float): Proportion of test dataset used for evaluating the model (default: 1.0).
+        --selection_epochs (int): Number of epochs while performing selection on full dataset (default: 40).
+        --selection_momentum (float): Momentum while performing selection (default: 0.9).
+        --selection_weight_decay (float): Weight decay while performing selection (default: 5e-4).
+        --selection_optimizer (str): Optimizer to use while performing selection (default: "SGD").
+        --selection_nesterov (bool): If set, use Nesterov momentum while performing selection (default: True).
+        --selection_lr (float): Learning rate for selection (default: 0.1).
+        --selection_test_interval (int): Number of training epochs between two test epochs during selection (default: 1).
+        --selection_test_fraction (float): Proportion of test dataset used for evaluating the model while performing selection (default: 1.0).
+        --balance (bool): Whether balance selection is performed per class (default: True).
+        --submodular (str): Submodular function to use (default: "GraphCut").
+        --submodular_greedy (str): Greedy algorithm for submodular optimization (default: "LazyGreedy").
+        --uncertainty (str): Uncertainty score to use (default: "Entropy").
+        --save_path (str): Path to save results (default: "").
+        --resume (str): Path to latest checkpoint (default: "").
+        --num_gpus (int): Number of GPUs to use for OTI (default: 3).
+        --oti_mode (str): OTI operation mode (default: "scores").
+        --oti_use_regularization (bool): Use regularization in OTI score calculation.
+        --oti_use_learning_rate (bool): Use learning rate in OTI score calculation.
+        --oti_use_sliding_window (bool): Use sliding window in OTI score calculation.
+        --eps_min (float): Minimum threshold for loss change (default: 0.1).
+        --eps_max (float): Maximum threshold for loss change (default: 0.05).
+        --delta_min (float): Minimum threshold for parameter change (default: 0.1).
+        --delta_max (float): Maximum threshold for parameter change (default: 0.05).
+        --delta_step (float): Step size for parameter change (default: 0.01).
+        --log_level (str): Set the logging level (default: "INFO").
+        --num_scores (int): Number of scores to calculate for LOO (default: 100).
+    """
     parser = argparse.ArgumentParser(description="Parameter Processing")
 
     # Basic arguments
