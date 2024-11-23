@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 3:07:30 pm
+# Last Modified: Saturday, 23rd November 2024 10:54:01 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -11,11 +11,13 @@
 # ----------		------	---------------------------------------------------------
 ###
 
+import multiprocessing
 import os
 import torch.nn as nn
 import argparse
 import deepcore.nets as nets
 import deepcore.datasets as datasets
+from deepcore.datasets.flipped_dataset import FlippedDataset
 import deepcore.methods as methods
 from deepcore.methods.selection_methods import SELECTION_METHODS
 from deepcore.methods.coresetmethod import CoresetMethod
@@ -88,6 +90,8 @@ def parse_args():
         --delta_step (float): Step size for parameter change (default: 0.01).
         --log_level (str): Set the logging level (default: "INFO").
         --num_scores (int): Number of scores to calculate for LOO (default: 100).
+        --exp (str): Specify the experiment mode: 'train_and_eval' or 'flip'. Default is 'train_and_eval'.
+        --num_flip (int): Number of flips to perform in 'flip' mode (default
     """
     parser = argparse.ArgumentParser(description="Parameter Processing")
 
@@ -389,11 +393,20 @@ def parse_args():
         help="Set the logging level",
     )
 
-    args = parser.parse_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    parser.add_argument(
+        "--exp",
+        type=str,
+        default="train_and_eval",
+        choices=["train_and_eval", "flip"],
+        help="Specify the experiment mode: 'train_and_eval' or 'flip'. Default is 'train_and_eval'.",
+    )
 
-    # add args.timestamp
-    args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    parser.add_argument(
+        "--num_flip",
+        type=int,
+        default=100,
+        help="Number of flips to perform in 'flip' mode.",
+    )
 
     # loo
     parser.add_argument(
@@ -402,6 +415,12 @@ def parse_args():
         default=100,
         help="Number of scores to calculate for LOO",
     )
+
+    args = parser.parse_args()
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # add args.timestamp
+    args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     return args
 
@@ -495,20 +514,7 @@ def load_checkpoint(args):
 
 def initialize_dataset_and_model(args, checkpoint):
     """Initialize the dataset and model for training, including data loaders for training and testing."""
-    logger = logging.getLogger(__name__)
-
-    # Load dataset and basic dataset properties
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
-        datasets.__dict__[args.dataset](args.data_path)
-    )
-    args.channel, args.im_size, args.num_classes, args.class_names = (
-        channel,
-        im_size,
-        num_classes,
-        class_names,
-    )
-
-    torch.random.manual_seed(args.seed)
+    logger, mean, std, dst_train, dst_test = initialize_logging_and_datasets(args)
 
     # Configure selection method and subset (if applicable)
     if "subset" in checkpoint.keys():
@@ -563,7 +569,12 @@ def initialize_dataset_and_model(args, checkpoint):
             )
         else:
             method = method_class(
-                dst_train, args, args.fraction, args.seed, dst_test=dst_test,**selection_args
+                dst_train,
+                args,
+                args.fraction,
+                args.seed,
+                dst_test=dst_test,
+                **selection_args,
             )
 
         subset = method.select()
@@ -624,6 +635,103 @@ def initialize_dataset_and_model(args, checkpoint):
     logger.info(f"test_loader_len: {len(test_loader)}")
 
     return train_loader, test_loader, if_weighted, subset, selection_args
+
+
+def initialize_logging_and_datasets(args):
+    logger = logging.getLogger(__name__)
+
+    # Load dataset and basic dataset properties
+    mean, std, dst_train, dst_test = initialize_dataset_properties(args)
+
+    torch.random.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    return logger, mean, std, dst_train, dst_test
+
+
+def initialize_dataset_properties(args):
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
+        datasets.__dict__[args.dataset](args.data_path)
+    )
+    args.channel, args.im_size, args.num_classes, args.class_names = (
+        channel,
+        im_size,
+        num_classes,
+        class_names,
+    )
+
+    return mean, std, dst_train, dst_test
+
+
+def initialize_flip_exp(args, seed):
+    """
+    初始化翻转实验。
+
+    返回:
+        flipped_train_loader: 包含部分翻转样本的训练集加载器。
+        test_loader: 测试集加载器。
+        flipped_set: 被翻转的样本索引。
+        flipped_selection_set: 用于选择方法的样本索引。
+        flipped_selection_args: 选择方法的相关参数。
+    """
+    logger, mean, std, dst_train, dst_test = initialize_logging_and_datasets(args)
+    # dst_train, dst_test: 来自 torchvision 的数据集（例如 MNIST），未进行打乱。
+
+    permuted_indices_path = os.path.join(args.save_path, "permuted_indices.csv")
+
+    if os.path.exists(permuted_indices_path):
+        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",").astype(int)
+        logger.info(f"Loaded permuted indices from {permuted_indices_path}")
+    else:
+        # 使用 args.seed 和 args.num_scores 初始化 flipped_selection_set
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+        permuted_indices = (
+            torch.randperm(len(dst_train), generator=generator).numpy().astype(int)
+        )
+
+        # save permuted indices to csv
+        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",")
+        logger.info(f"Saved permuted indices to {permuted_indices_path}")
+
+    # 创建包含部分翻转样本的训练集
+    flipped_dataset = FlippedDataset(
+        dst_train,
+        permuted_indices,
+        args.num_scores,
+        args.num_flip,
+        args.dataset,
+        args.seed,
+        logger,
+    )
+
+    flipped_indices = flipped_dataset.get_flipped_indices()
+
+    # save flipped indices to csv
+    flipped_indices_path = os.path.join(args.save_path, "flipped_indices.csv")
+    np.savetxt(flipped_indices_path, flipped_indices, delimiter=",")
+    logger.info(f"Saved flipped indices to {flipped_indices_path}")
+
+    # flipped_train_loader = torch.utils.data.DataLoader(
+    #     flipped_dataset,
+    #     batch_size=args.selection_batch,
+    #     shuffle=False,
+    #     num_workers=args.workers,
+    #     pin_memory=True,
+    # )
+
+    # 创建测试集加载器
+    test_loader = torch.utils.data.DataLoader(
+        dst_test,
+        batch_size=args.selection_batch,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
+    )
+
+    logger.info("Initialize flip experiment successfully.")
+
+    return (flipped_dataset, test_loader, flipped_indices, permuted_indices)
 
 
 def initialize_network(args, model, train_loader, checkpoint, start_epoch):
@@ -698,7 +806,7 @@ def print_experiment_info(args, exp, checkpoint_name):
 
     logger.info(f"================== Exp {exp} ==================")
     logger.info(
-        f"dataset: {args.dataset}, model: {args.model}, selection: {args.selection}, num_ex: {args.num_exp}, epochs: {args.epochs}, fraction: {args.fraction}, seed: {args.seed}, lr: {args.lr}, save_path: {args.save_path}, resume: {args.resume}, device: {args.device}, {'checkpoint_name: {checkpoint_name}' if args.save_path != '' else ''}"
+        f"exp:{args.exp}, dataset: {args.dataset}, model: {args.model}, selection: {args.selection}, num_ex: {args.num_exp}, epochs: {args.epochs}, fraction: {args.fraction}, seed: {args.seed}, lr: {args.lr}, save_path: {args.save_path}, resume: {args.resume}, device: {args.device}, {'checkpoint_name: {checkpoint_name}' if args.save_path != '' else ''}"
     )
 
 
@@ -876,40 +984,120 @@ def finalize_checkpoint(
 def run_experiment(args, checkpoint, start_exp, start_epoch):
     """Run the main training and evaluation loop."""
     logger = logging.getLogger(__name__)
+    if args.exp == "train_and_eval":
+        for exp in range(start_exp, args.num_exp):
+            checkpoint_name = (
+                setup_checkpoint_name(args, exp) if args.save_path != "" else ""
+            )
+            print_experiment_info(args, exp, checkpoint_name)
+
+            train_loader, test_loader, if_weighted, subset, selection_args = (
+                initialize_dataset_and_model(args, checkpoint)
+            )
+            models = [args.model] + (
+                [model for model in args.cross if model != args.model]
+                if isinstance(args.cross, list)
+                else []
+            )
+
+            for model in models:
+                if len(models) > 1:
+                    logger.info(f"| Training on model {model}")
+                train_and_evaluate_model(
+                    args,
+                    exp,
+                    start_epoch,
+                    train_loader,
+                    test_loader,
+                    subset,
+                    selection_args,
+                    checkpoint_name,
+                    model,
+                    checkpoint,
+                )
+
+            start_epoch = 0
+            checkpoint = {}
+            sleep(2)
+    elif args.exp == "flip":
+        _export_flipped_scores_summary(logger, args, start_exp, checkpoint)
+
+
+def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
+    scores, flipped_indices, permuted_indices, flipped_train_dataset = (
+        _perform_flip_experiment(logger, args, start_exp, checkpoint)
+    )
+    average_score, std_score = _calculate_average_score(scores, logger=logger)
+
+    # index, label, average_score to csv
+    df = pd.DataFrame(average_score.detach().numpy())
+    df["index"] = flipped_train_dataset.indices
+    df["label"] = flipped_train_dataset.dataset.targets
+    df.to_csv(f"{args.save_path}/average_score_{args.timestamp}.csv", index=False)
+
+    # find num_flip samples with the lowest average_score, see how many of them are flipped
+    num_flipped_in_lowest_scores = sum(
+        idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
+    )
+    logger.info(
+        f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
+    )
+
+
+def _calculate_average_score(scores, logger, **kwargs):
+    """Calculate the average score for each sample over all experiments."""
+    average_score = torch.mean(torch.stack(scores), dim=0)
+    std_score = torch.std(torch.stack(scores), dim=0)
+
+    logger.info(f"size of average_score: {average_score.size()}")
+    logger.info(f"size of std_score: {std_score.size()}")
+
+    return average_score, std_score
+
+
+def _perform_flip_experiment(logger, args, start_exp, checkpoint):
+    logger.info(
+        f"Running flip experiment with {args.num_flip} flips on {args.num_scores} samples"
+    )
+
+    scores = []
+
     for exp in range(start_exp, args.num_exp):
         checkpoint_name = (
             setup_checkpoint_name(args, exp) if args.save_path != "" else ""
         )
         print_experiment_info(args, exp, checkpoint_name)
 
-        train_loader, test_loader, if_weighted, subset, selection_args = (
-            initialize_dataset_and_model(args, checkpoint)
-        )
-        models = [args.model] + (
-            [model for model in args.cross if model != args.model]
-            if isinstance(args.cross, list)
-            else []
+        (flipped_train_dataset, test_loader, flipped_indices, permuted_indices) = (
+            initialize_flip_exp(args, args.seed + exp)
         )
 
-        for model in models:
-            if len(models) > 1:
-                logger.info(f"| Training on model {model}")
-            train_and_evaluate_model(
-                args,
-                exp,
-                start_epoch,
-                train_loader,
-                test_loader,
-                subset,
-                selection_args,
-                checkpoint_name,
-                model,
-                checkpoint,
-            )
+        method_class = SELECTION_METHODS.get(args.selection)
 
-        start_epoch = 0
-        checkpoint = {}
-        sleep(2)
+        method = method_class(
+            flipped_train_dataset,
+            args,
+            args.fraction,
+            args.seed,
+            dst_test=test_loader.dataset,
+            epochs=args.selection_epochs,
+        )
+
+        score = method.get_scores()
+
+        # save the score to file
+        # RuntimeError: Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy() instead.
+        try:
+            df = pd.DataFrame(score.detach().numpy())
+        except RuntimeError:
+            df = pd.DataFrame(score)
+
+        df.to_csv(f"{args.save_path}/flip_scores_{exp}.csv", index=False)
+
+        scores.append(score)
+        logger.debug(f"Scores: {scores}")
+
+    return scores, flipped_indices, permuted_indices, flipped_train_dataset
 
 
 def setup_checkpoint_name(args, exp):
@@ -958,6 +1146,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # set spawn method for multiprocessing
+    multiprocessing.set_start_method("spawn", force=True)
     try:
         main()
     except Exception as e:
