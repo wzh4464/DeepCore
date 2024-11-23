@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 11:29:53 am
+# Last Modified: Saturday, 23rd November 2024 1:25:50 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -680,7 +680,7 @@ def initialize_flip_exp(args, seed):
     permuted_indices_path = os.path.join(args.save_path, "permuted_indices.csv")
 
     if os.path.exists(permuted_indices_path):
-        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",", fmt='%d').astype(int)
+        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",").astype(int)
         logger.info(f"Loaded permuted indices from {permuted_indices_path}")
     else:
         # 使用 args.seed 和 args.num_scores 初始化 flipped_selection_set
@@ -729,7 +729,19 @@ def initialize_flip_exp(args, seed):
         pin_memory=True,
     )
 
-    logger.info("Initialize flip experiment successfully.")
+    # 创建 permutate 后 df 并保存. ind, label, flipped
+    # df = pd.DataFrame(
+    #     {
+    #         "ind": [flipped_dataset[i][2] for i in range(len(flipped_dataset))],
+    #         "label": [flipped_dataset[i][1] for i in range(len(flipped_dataset))],
+    #         "flipped": [i in flipped_indices for i in permuted_indices],
+    #     }
+    # )
+    
+    # df.to_csv(os.path.join(args.save_path, "permuted_df.csv"), index=False)
+    # logger.info(f"Saved permuted df to {os.path.join(args.save_path, 'permuted_df.csv')}")
+
+    # logger.info("Initialize flip experiment successfully.")
 
     return (flipped_dataset, test_loader, flipped_indices, permuted_indices)
 
