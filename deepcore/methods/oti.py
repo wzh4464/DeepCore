@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 2:55:54 pm
+# Last Modified: Saturday, 23rd November 2024 4:44:46 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -122,6 +122,8 @@ class OTI(EarlyTrain):
 
         # Store initial seed
         self.initial_seed = random_seed if random_seed is not None else args.seed
+
+        self.current_grads = None
 
     def _update_seed(self):
         """Update seed based on current experiment number."""
@@ -614,9 +616,27 @@ class OTI(EarlyTrain):
         self.model_optimizer.zero_grad()
         loss.backward()
 
+        # push parameters and gradients (in case of change from _compute_scores)
+        self.current_epoch_parameters.append(
+            {
+                name: param.cpu().clone().detach()
+                for name, param in self.model.state_dict().items()
+            }
+        )
+        
+        self.current_grads = {
+            name: param.grad.cpu().clone().detach()
+            for name, param in self.model.named_parameters()
+        }
+
         scores = self._compute_scores(
             best_params, epoch_lr, use_regularization, device, inputs, targets
         )
+        
+        # pop parameters and gradients and load to model
+        for name, param in self.model.named_parameters():
+            param.grad = self.current_grads[name].to(device)
+        self.model.load_state_dict(self.current_epoch_parameters[-1])
 
         self.model_optimizer.step()
 
@@ -627,29 +647,6 @@ class OTI(EarlyTrain):
                 f"Mean score: {scores.mean().item():.4f}"
             )
         return scores, batch_indices_tensor
-
-    def _compute_scores(
-        self,
-        best_params: dict,
-        epoch_lr: float,
-        use_regularization: bool,
-        device: torch.device,
-        inputs: torch.Tensor,
-        targets: torch.Tensor,
-    ) -> torch.Tensor:
-        batch_size = inputs.size(0)
-        initial_distances = torch.zeros(batch_size, device=device)
-        pseudo_distances = torch.zeros(batch_size, device=device)
-
-        # 将模型移动到指定设备并设置为评估模式
-        self.model.to(device)
-        self.model.eval()
-
-        # 计算当前参数与最佳参数的距离
-        for name, param in self.model.named_parameters():
-            if name in best_params:
-                param_diff = param - best_params[name].to(device)
-                initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
 
     def _compute_scores(
         self,
@@ -674,6 +671,10 @@ class OTI(EarlyTrain):
         for i in range(batch_size):
             # 清空之前的梯度
             self.model_optimizer.zero_grad()
+            if i % self.args.print_freq == 0:
+                self.logger.debug(
+                    f"Processing sample {i}/{batch_size} for score calculation"
+                )
 
             # 当前样本的前向传播
             input_i = inputs[i : i + 1]  # 提取单个样本，形状 (1, ...)
