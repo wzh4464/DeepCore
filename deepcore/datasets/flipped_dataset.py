@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 11:06:43 am
+# Last Modified: Saturday, 23rd November 2024 1:25:38 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -52,24 +52,47 @@ class FlippedDataset(IndexedDataset):
             i for i, idx in enumerate(self.indices) if self.dataset.targets[idx] == 1
         ]
 
-        self.flipped_indices = np.random.choice(
+        self.flipped_indices_permuted = np.random.choice(
             self.one_indices, size=self.num_flip, replace=False
         )
-        self.flipped_indices_set = set(self.flipped_indices.tolist())
+        self.flipped_indices_unpermuted = [
+            self.indices[idx] for idx in self.flipped_indices_permuted
+        ]
+        self.flipped_indices_set = set(self.flipped_indices_permuted.tolist())
 
-        # 创建新的targets列表
-        self.targets = self.dataset.targets.clone()
-        for idx in self.flipped_indices:
-            self.targets[self.indices[idx]] = 7
+        # 创建新的 targets 映射字典，只存储被翻转的标签
+        self.flipped_targets = {}
+        for idx in self.flipped_indices_permuted:
+            self.flipped_targets[self.indices[idx]] = 7
 
         self.logger.info(f"Flipped {self.num_flip} labels from 1 to 7.")
-        self.logger.info(f"Flipped indices: {self.flipped_indices}")
+        self.logger.info(f"Flipped indices: {self.flipped_indices_permuted}")
+
+    def __getitem__(self, idx):
+        real_idx = self.indices[idx]
+        data, target = self.dataset[real_idx]
+
+        # 如果这个索引在被翻转的集合中，返回翻转后的标签
+        if real_idx in self.flipped_targets:
+            target = self.flipped_targets[real_idx]
+
+        return data, target, real_idx
+
+    def __len__(self):
+        return len(self.indices)
 
     def get_flipped_indices(self):
         """
-        Retrieve the indices of the flipped dataset.
-
+        Retrieve the true indices of the flipped dataset.
         Returns:
             list: A list of indices representing the flipped dataset.
         """
-        return self.flipped_indices
+        return self.flipped_indices_unpermuted
+
+    def get_flipped_indices_inner(self):
+        """
+        Retrieve the permuted indices of the flipped dataset.
+        Returns:
+            list: A list of indices representing the flipped dataset.
+        """
+        return self.flipped_indices_permuted
