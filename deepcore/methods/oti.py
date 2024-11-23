@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 20th November 2024 5:08:47 pm
+# Last Modified: Saturday, 23rd November 2024 12:35:15 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -28,6 +28,7 @@ import logging
 from typing import Dict, Optional, Tuple, override
 import pandas as pd
 from torch.utils.data import DataLoader
+from deepcore.datasets.flipped_dataset import IndexedDataset
 
 import sys
 
@@ -67,7 +68,7 @@ class OTI(EarlyTrain):
         random_seed=None,
         epochs=200,
         specific_model=None,
-        mode="scores",
+        mode="full",
         fractions=None,
         use_regularization=False,  # 新选项：是否使用正则化
         use_learning_rate=True,  # 新选项：是否使用学习率
@@ -317,13 +318,9 @@ class OTI(EarlyTrain):
             self.logger.debug(
                 "[OTI] Best parameters found. Starting score calculation."
             )
-        except FileNotFoundError:
-            self.logger.info(
-                "[OTI] Using the current model parameters as the best parameters."
-            )
-            best_params = torch.load(
-                os.path.join(self.args.save_path, "best_params.pkl"), weights_only=True
-            )
+        except AssertionError:
+            self.before_run()
+            self.run()
 
         init_params = torch.load(
             os.path.join(self.args.save_path, "initial_params.pt"), weights_only=True
@@ -343,7 +340,7 @@ class OTI(EarlyTrain):
         else:
             self.logger.info("[OTI] Using multiple GPUs for score calculation")
             return self._multi_gpu_calculate_scores(
-                best_params,
+                self.best_params,
                 init_params,
                 use_regularization,
                 use_learning_rate,
@@ -370,12 +367,12 @@ class OTI(EarlyTrain):
         """Create and return training data loader."""
         self.logger.info("Creating training data loader.")
         # Create a list of indices for training
-        list_of_train_idx = np.random.choice(
-            np.arange(self.n_train), self.n_pretrain_size, replace=False
-        )
+        # list_of_train_idx = np.random.choice(
+        #     np.arange(self.n_train), self.n_pretrain_size, replace=False
+        # )
 
         # Create the indexed dataset
-        indexed_dataset = IndexedDataset(self.dst_train, list_of_train_idx)
+        indexed_dataset = self.dst_train
         self.logger.debug(
             "IndexedDataset created with %d samples.", len(indexed_dataset)
         )
@@ -393,7 +390,7 @@ class OTI(EarlyTrain):
             self.args.selection_batch,
             self.args.workers,
         )
-        return train_loader, list_of_train_idx
+        return train_loader, self.dst_train.indices
 
     def _init_multiprocessing(self):
         """Initialize multiprocessing manager and return dict."""
@@ -513,6 +510,7 @@ class OTI(EarlyTrain):
 
             if train_loader is None:
                 train_loader, train_indices = self._get_train_loader()
+                self.train_iterator = iter(train_loader)
 
             scores = torch.zeros(len(train_indices), dtype=torch.float32, device="cpu")
 
@@ -844,20 +842,11 @@ class OTI(EarlyTrain):
             self.train_loader, self.train_indices = self._get_train_loader()
             self.train_iterator = iter(self.train_loader)
 
+    @override
+    def get_scores(self, **kwargs):
+        """torch.Tensor: Get the calculated scores."""
+        return self._calculate_scores(True, True, False)
+
 
 # Add OTI to SELECTION_METHODS
 SELECTION_METHODS["OTI"] = OTI
-
-
-class IndexedDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, indices):
-        self.dataset = dataset
-        self.indices = indices
-
-    def __getitem__(self, idx):
-        true_idx = self.indices[idx]
-        data, target = self.dataset[true_idx]
-        return data, target, true_idx
-
-    def __len__(self):
-        return len(self.indices)
