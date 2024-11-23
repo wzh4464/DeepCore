@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 12:35:15 am
+# Last Modified: Saturday, 23rd November 2024 2:55:54 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -23,6 +23,9 @@ from .earlytrain import EarlyTrain
 import torch
 import numpy as np
 import torch.multiprocessing as mp
+from torch import autograd
+from functools import partial
+from functorch import vmap, grad
 from tqdm import tqdm
 import logging
 from typing import Dict, Optional, Tuple, override
@@ -91,12 +94,6 @@ class OTI(EarlyTrain):
         super().__init__(
             dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
         )
-        self.logger = logging.getLogger(__name__)
-        handler = TqdmLoggingHandler()
-        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
-        self.logger.debug("[OTI] Logging setup completed.")
 
         # Force batch size to 1 for OTI method
         # self.args.selection_batch = 1
@@ -314,11 +311,13 @@ class OTI(EarlyTrain):
         Calculate scores by training in real-time and comparing parameters with best_params.
         """
         try:
-            assert self.best_params is not None
+            if self.best_params is None:
+                self.before_run()
+                self.best_params = self._load_best_params()
             self.logger.debug(
                 "[OTI] Best parameters found. Starting score calculation."
             )
-        except AssertionError:
+        except FileNotFoundError:
             self.before_run()
             self.run()
 
@@ -328,7 +327,7 @@ class OTI(EarlyTrain):
 
         if self.num_gpus <= 1:
             self.logger.info("[OTI] Using single GPU for score calculation")
-            device_id = self.args.gpu[0]
+            device_id = 0 if self.args.gpu is None else self.args.gpu[0]
             return self._single_gpu_calculate_scores(
                 self.best_params,
                 init_params,
@@ -507,9 +506,11 @@ class OTI(EarlyTrain):
             device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
 
             self._setup_optimizer_scheduler(use_learning_rate)
+            self.logger.info(f"[{worker_name}] Initialized optimizer and scheduler")
 
             if train_loader is None:
                 train_loader, train_indices = self._get_train_loader()
+                self.logger.info(f"[{worker_name}] Created training data loader")
                 self.train_iterator = iter(train_loader)
 
             scores = torch.zeros(len(train_indices), dtype=torch.float32, device="cpu")
@@ -607,14 +608,14 @@ class OTI(EarlyTrain):
         batch_indices = train_indices[batch_start:batch_end]
         batch_indices_tensor = torch.tensor(batch_indices, device=device)
 
+        # 计算整个batch的loss和梯度
         outputs = self.model(inputs)
         loss = self.criterion(outputs, targets)
-
         self.model_optimizer.zero_grad()
         loss.backward()
 
         scores = self._compute_scores(
-            best_params, epoch_lr, use_regularization, device, batch_indices
+            best_params, epoch_lr, use_regularization, device, inputs, targets
         )
 
         self.model_optimizer.step()
@@ -625,7 +626,6 @@ class OTI(EarlyTrain):
                 f"Samples scored: {len(scores)}, "
                 f"Mean score: {scores.mean().item():.4f}"
             )
-
         return scores, batch_indices_tensor
 
     def _compute_scores(
@@ -634,32 +634,81 @@ class OTI(EarlyTrain):
         epoch_lr: float,
         use_regularization: bool,
         device: torch.device,
-        batch_indices: np.ndarray,
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Computes the scores based on the difference between the current model parameters
-        and the best parameters, optionally using regularization.
-        Args:
-            best_params (dict): Dictionary containing the best parameters of the model.
-            epoch_lr (float): Learning rate for the current epoch.
-            use_regularization (bool): Flag indicating whether to use regularization.
-            device (torch.device): The device on which tensors should be allocated.
-            batch_indices (np.ndarray): Array of batch indices.
-        Returns:
-            torch.Tensor: Tensor containing the computed scores.
-        """
+        batch_size = inputs.size(0)
+        initial_distances = torch.zeros(batch_size, device=device)
+        pseudo_distances = torch.zeros(batch_size, device=device)
 
-        initial_distances = torch.zeros(len(batch_indices), device=device)
-        pseudo_distances = torch.zeros(len(batch_indices), device=device)
+        # 将模型移动到指定设备并设置为评估模式
+        self.model.to(device)
+        self.model.eval()
+
+        # 计算当前参数与最佳参数的距离
+        for name, param in self.model.named_parameters():
+            if name in best_params:
+                param_diff = param - best_params[name].to(device)
+                initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
+
+    def _compute_scores(
+        self,
+        best_params: dict,
+        epoch_lr: float,
+        use_regularization: bool,
+        device: torch.device,
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> torch.Tensor:
+        batch_size = inputs.size(0)  # 256
+        initial_distances = torch.zeros(batch_size, device=device)
+        pseudo_distances = torch.zeros(batch_size, device=device)
+
+        # 计算当前参数与最佳参数的距离
         for name, param in self.model.named_parameters():
             if name in best_params:
                 param_diff = param - best_params[name]
                 initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
 
-                if param.grad is not None:
-                    pseudo_param = param - epoch_lr * param.grad
-                    param_diff_pseudo = pseudo_param - best_params[name]
-                    pseudo_distances += torch.norm(param_diff_pseudo.view(1, -1), dim=1)
+        # 遍历每个样本，逐个计算梯度
+        for i in range(batch_size):
+            # 清空之前的梯度
+            self.model_optimizer.zero_grad()
+
+            # 当前样本的前向传播
+            input_i = inputs[i : i + 1]  # 提取单个样本，形状 (1, ...)
+            target_i = targets[i : i + 1]  # 提取对应标签，形状 (1, ...)
+            output_i = self.model(input_i)
+            loss_i = self.criterion(output_i, target_i)
+
+            # 反向传播计算梯度
+            loss_i.backward(retain_graph=True)
+
+            # 对每个参数逐一计算梯度和伪距离
+            for name, param in self.model.named_parameters():
+                if name in best_params:
+                    # 获取当前样本对参数的梯度
+                    grad_i = param.grad  # 当前样本的梯度，形状与参数相同
+
+                    if grad_i is not None:
+                        # 打印调试信息
+                        # print(f"Parameter {name} shape: {param.shape}")
+                        # print(f"Gradient shape: {grad_i.shape}")
+
+                        # 展平参数和梯度
+                        param_flat = param.view(1, -1)  # (1, num_params)
+                        grad_flat = grad_i.view(1, -1)  # (1, num_params)
+                        best_param_flat = best_params[name].view(
+                            1, -1
+                        )  # (1, num_params)
+
+                        # 计算伪参数和伪距离
+                        pseudo_param = param_flat - epoch_lr * grad_flat
+                        param_diff_pseudo = pseudo_param - best_param_flat
+
+                        # 更新伪距离
+                        curr_distance = torch.norm(param_diff_pseudo, dim=1)
+                        pseudo_distances[i] += curr_distance.item()
 
         return (
             torch.where(
@@ -791,7 +840,8 @@ class OTI(EarlyTrain):
             )
         elif self.mode == "stored":
             try:
-                self.load_stored_params()
+                self.before_run()
+                self.best_params = self._load_best_params()
                 if self.best_params is None:
                     self.logger.error("Failed to load best parameters from stored data")
                     raise ValueError("Failed to load best parameters from stored data")
