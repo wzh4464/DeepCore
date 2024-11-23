@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 10:54:01 am
+# Last Modified: Saturday, 23rd November 2024 11:29:53 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -680,7 +680,7 @@ def initialize_flip_exp(args, seed):
     permuted_indices_path = os.path.join(args.save_path, "permuted_indices.csv")
 
     if os.path.exists(permuted_indices_path):
-        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",").astype(int)
+        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",", fmt='%d').astype(int)
         logger.info(f"Loaded permuted indices from {permuted_indices_path}")
     else:
         # 使用 args.seed 和 args.num_scores 初始化 flipped_selection_set
@@ -691,7 +691,7 @@ def initialize_flip_exp(args, seed):
         )
 
         # save permuted indices to csv
-        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",")
+        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",", fmt='%d')
         logger.info(f"Saved permuted indices to {permuted_indices_path}")
 
     # 创建包含部分翻转样本的训练集
@@ -709,7 +709,7 @@ def initialize_flip_exp(args, seed):
 
     # save flipped indices to csv
     flipped_indices_path = os.path.join(args.save_path, "flipped_indices.csv")
-    np.savetxt(flipped_indices_path, flipped_indices, delimiter=",")
+    np.savetxt(flipped_indices_path, flipped_indices, delimiter=",", fmt='%d')
     logger.info(f"Saved flipped indices to {flipped_indices_path}")
 
     # flipped_train_loader = torch.utils.data.DataLoader(
