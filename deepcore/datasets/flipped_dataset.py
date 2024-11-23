@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:01:34 am
+# Last Modified: Saturday, 23rd November 2024 11:06:43 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -63,6 +63,7 @@ class FlippedDataset(IndexedDataset):
             self.targets[self.indices[idx]] = 7
 
         self.logger.info(f"Flipped {self.num_flip} labels from 1 to 7.")
+        self.logger.info(f"Flipped indices: {self.flipped_indices}")
 
     def get_flipped_indices(self):
         """
