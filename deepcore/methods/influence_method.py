@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 10:41:53 am
+# Last Modified: Saturday, 23rd November 2024 1:32:01 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -74,7 +74,7 @@ class InfluenceMethod(CoresetMethod):
         )
         model.train()
         for epochs in range(self.args.epochs):
-            for step, (inputs, targets) in enumerate(train_loader):
+            for step, (inputs, targets, _) in enumerate(train_loader):
                 inputs, targets = inputs.to(device), targets.to(device)
                 optimizer.zero_grad()
                 outputs = model(inputs)

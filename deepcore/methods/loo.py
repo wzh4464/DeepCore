@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 22nd November 2024 10:51:35 am
+# Last Modified: Saturday, 23rd November 2024 1:21:57 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -14,6 +14,7 @@
 # FILE: loo.py
 
 import concurrent
+from typing import override
 from .influence_method import InfluenceMethod
 from .selection_methods import SELECTION_METHODS
 import torch
@@ -29,6 +30,23 @@ class LOO(InfluenceMethod):
     """
 
     def select(self, **kwargs):
+        influence_scores = self.compute_influence_scores()
+        selected_indices = np.argsort(influence_scores)[::-1][: self.coreset_size]
+
+        self.logger.info(f"Selected indices: {selected_indices}")
+
+        self.logger.info(f"Selected scores: {influence_scores}")
+        # save loss values to csv file
+        np.savetxt(
+            f"{self.args.save_path}/loo_losses.csv",
+            influence_scores,
+            delimiter=",",
+            fmt="%0.6f",
+        )
+
+        return {"indices": selected_indices, "scores": influence_scores}
+
+    def compute_influence_scores(self):
         num_scores = self.num_scores
         losses = np.zeros(num_scores)
 
@@ -60,21 +78,7 @@ class LOO(InfluenceMethod):
             self.dst_train, device_id=0
         )  # 使用第一个 GPU 或其他策略
         full_loss = self.evaluate_model(full_model, device_id=0)
-        influence_scores = full_loss - losses
-        selected_indices = np.argsort(influence_scores)[::-1][: self.coreset_size]
-
-        self.logger.info(f"Selected indices: {selected_indices}")
-
-        self.logger.info(f"Selected scores: {influence_scores}")
-        # save loss values to csv file
-        np.savetxt(
-            f"{self.args.save_path}/loo_losses.csv",
-            influence_scores,
-            delimiter=",",
-            fmt="%0.6f",
-        )
-
-        return {"indices": selected_indices, "scores": influence_scores}
+        return full_loss - losses
 
     def process_indices(self, indices, device_id):
         """
@@ -98,6 +102,10 @@ class LOO(InfluenceMethod):
                 f"GPU {device_id}: Processed sample {idx+1}/{len(self.dst_train)}, Loss: {loss} for {i}th sample"
             )
         return local_losses
+ 
+    @override
+    def get_scores(self):
+        return self.compute_influence_scores()
 
 
 SELECTION_METHODS["loo"] = LOO
