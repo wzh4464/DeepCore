@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 13th November 2024 9:32:54 am
+# Last Modified: Saturday, 23rd November 2024 1:14:21 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -198,7 +198,7 @@ class EarlyTrain(CoresetMethod):
         Returns:
             The result of finish_train method.
         """
-        self.logger.info(f"train({epoch}, {list_of_train_idx}, {kwargs})")
+        self.logger.debug(f"train({epoch}, {list_of_train_idx}, {kwargs})")
         self.before_train()
         self.model.train()
 
@@ -223,7 +223,7 @@ class EarlyTrain(CoresetMethod):
             pin_memory=True,
         )
 
-        for i, (inputs, targets) in enumerate(train_loader):
+        for i, (inputs, targets, _) in enumerate(train_loader):
             inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
 
             # Forward propagation, compute loss, get predictions
@@ -256,11 +256,8 @@ class EarlyTrain(CoresetMethod):
         self.logger.info("run()")
 
         for epoch in range(self.epochs):
-            list_of_train_idx = np.random.choice(
-                np.arange(self.n_pretrain if self.if_dst_pretrain else self.n_train),
-                self.n_pretrain_size,
-                replace=False,
-            )
+            dst_train = self.dst_pretrain_dict["dst_train"] if self.if_dst_pretrain else self.dst_train
+            list_of_train_idx = dst_train.indices.tolist()
             self.before_epoch()
             self.train(epoch, list_of_train_idx)
             if (
