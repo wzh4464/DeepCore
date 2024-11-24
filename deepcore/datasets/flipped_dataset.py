@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:25:38 pm
+# Last Modified: Sunday, 24th November 2024 10:22:28 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -58,7 +58,24 @@ class FlippedDataset(IndexedDataset):
         self.flipped_indices_unpermuted = [
             self.indices[idx] for idx in self.flipped_indices_permuted
         ]
-        self.flipped_indices_set = set(self.flipped_indices_permuted.tolist())
+
+        # Initialize scores_indices with flipped indices
+        self.scores_indices = self.flipped_indices_unpermuted.copy()
+
+        # Calculate how many additional indices we need
+        remaining_indices = list(
+            set(self.indices) - set(self.flipped_indices_unpermuted)
+        )
+        additional_needed = self.num_scores - len(self.flipped_indices_unpermuted)
+
+        if additional_needed > 0:
+            # Randomly select additional indices
+            additional_indices = np.random.choice(
+                remaining_indices,
+                size=min(additional_needed, len(remaining_indices)),
+                replace=False,
+            )
+            self.scores_indices.extend(additional_indices)
 
         # 创建新的 targets 映射字典，只存储被翻转的标签
         self.flipped_targets = {}
@@ -96,3 +113,11 @@ class FlippedDataset(IndexedDataset):
             list: A list of indices representing the flipped dataset.
         """
         return self.flipped_indices_permuted
+
+    def get_flipped_selection_from(self):
+        """
+        Retrieve the true indices of the scores dataset.
+        Returns:
+            list: A list of indices representing the scores dataset.
+        """
+        return self.scores_indices

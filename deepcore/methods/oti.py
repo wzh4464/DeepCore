@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 4:44:46 pm
+# Last Modified: Sunday, 24th November 2024 10:38:25 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -521,7 +521,7 @@ class OTI(EarlyTrain):
                 epoch_lr = self._update_learning_rate(use_learning_rate, epoch)
                 self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
-                for batch_ind, (inputs, targets, _) in enumerate(self.train_iterator):
+                for batch_ind, (inputs, targets, true_idx) in enumerate(self.train_iterator):
                     inputs, targets = inputs.to(device), targets.to(device)
                     batch_scores, batch_indices = self._process_batch(
                         inputs,
@@ -534,6 +534,7 @@ class OTI(EarlyTrain):
                         worker_name,
                         epoch,
                         train_indices,
+                        true_idx,
                     )
                     scores[batch_indices] = batch_scores.cpu()
 
@@ -587,6 +588,7 @@ class OTI(EarlyTrain):
         worker_name: str,
         epoch: int,
         train_indices: np.ndarray,
+        true_idx: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Processes a batch of data during training.
@@ -601,6 +603,7 @@ class OTI(EarlyTrain):
             worker_name (str): The name of the worker processing the batch.
             epoch (int): The current epoch number.
             train_indices (np.ndarray): The indices of the training data.
+            true_idx (true_idx): The true index of the batch
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the scores and the batch indices tensor.
         """
@@ -630,7 +633,7 @@ class OTI(EarlyTrain):
         }
 
         scores = self._compute_scores(
-            best_params, epoch_lr, use_regularization, device, inputs, targets
+            best_params, epoch_lr, use_regularization, device, inputs, targets, true_idx
         )
         
         # pop parameters and gradients and load to model
@@ -656,6 +659,7 @@ class OTI(EarlyTrain):
         device: torch.device,
         inputs: torch.Tensor,
         targets: torch.Tensor,
+        true_idx: torch.Tensor,
     ) -> torch.Tensor:
         batch_size = inputs.size(0)  # 256
         initial_distances = torch.zeros(batch_size, device=device)
@@ -669,6 +673,9 @@ class OTI(EarlyTrain):
 
         # 遍历每个样本，逐个计算梯度
         for i in range(batch_size):
+            true_idx_i = true_idx[i].item()
+            if true_idx_i not in self.dst_train.get_flipped_selection_from():
+                continue
             # 清空之前的梯度
             self.model_optimizer.zero_grad()
             if i % self.args.print_freq == 0:
