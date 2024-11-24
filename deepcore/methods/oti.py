@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 24th November 2024 10:38:25 am
+# Last Modified: Sunday, 24th November 2024 12:21:54 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -124,6 +124,26 @@ class OTI(EarlyTrain):
         self.initial_seed = random_seed if random_seed is not None else args.seed
 
         self.current_grads = None
+
+        # Add tracking for flipped samples
+        self.flipped_indices = (
+            dst_train.get_flipped_indices()
+            if hasattr(dst_train, "get_flipped_indices")
+            else []
+        )
+        self.scores_indices = (
+            dst_train.get_flipped_selection_from()
+            if hasattr(dst_train, "get_flipped_selection_from")
+            else []
+        )
+
+        if self.flipped_indices:
+            self.logger.info(
+                f"[OTI] Tracking {len(self.flipped_indices)} flipped samples"
+            )
+            self.logger.info(
+                f"[OTI] Computing scores for {len(self.scores_indices)} samples"
+            )
 
     def _update_seed(self):
         """Update seed based on current experiment number."""
@@ -453,7 +473,7 @@ class OTI(EarlyTrain):
         use_regularization=False,
         use_learning_rate=True,
         cpus_per_gpu=4,
-    ):
+    ) -> torch.Tensor:
         """Calculate scores using single GPU with multiple workers."""
         self.logger.info("[OTI] Starting score calculation on single GPU")
         return_dict = self._init_multiprocessing()
@@ -462,22 +482,36 @@ class OTI(EarlyTrain):
         self.model.load_state_dict(init_params)
         self.logger.info("[OTI] Loaded initial parameters")
 
-        scores = torch.zeros(self.n_train)
+        scores = []
         for name, param in best_params.items():
             best_params[name] = param.to(device_id)
 
         # Calculate scores
         for epoch in range(self.epochs):
-            scores += self._calculate_scores_on_device(
-                device_id,
-                [epoch],
-                best_params,
-                use_regularization,
-                use_learning_rate,
-                return_dict,
+            scores.append(
+                self._calculate_scores_on_device(
+                    device_id,
+                    [epoch],
+                    best_params,
+                    use_regularization,
+                    use_learning_rate,
+                    return_dict,
+                )
             )
 
-        return scores
+        # save scores to csv, and then sum them up and to torch tensor and return
+        scores_df = pd.DataFrame({
+            'epoch': range(self.epochs),
+            'scores': [s.mean().item() for s in scores]
+        })
+        self._save_epoch_scores_to_csv(
+            "epoch_scores.csv", scores_df, '[OTI] Saved epoch scores to '
+        )
+        # Stack scores and compute mean across epochs
+        stacked_scores = torch.stack(scores)
+        final_scores = torch.mean(stacked_scores, dim=0)
+
+        return final_scores
 
     def _multi_gpu_calculate_scores(
         self,
@@ -521,7 +555,9 @@ class OTI(EarlyTrain):
                 epoch_lr = self._update_learning_rate(use_learning_rate, epoch)
                 self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
 
-                for batch_ind, (inputs, targets, true_idx) in enumerate(self.train_iterator):
+                for batch_ind, (inputs, targets, true_idx) in enumerate(
+                    self.train_iterator
+                ):
                     inputs, targets = inputs.to(device), targets.to(device)
                     batch_scores, batch_indices = self._process_batch(
                         inputs,
@@ -543,6 +579,8 @@ class OTI(EarlyTrain):
                 return_dict[worker_id if worker_id is not None else device_id] = (
                     scores.detach().cpu()
                 )
+                
+            scores = scores[self.scores_indices] if self.scores_indices else scores
 
             return scores
 
@@ -626,7 +664,7 @@ class OTI(EarlyTrain):
                 for name, param in self.model.state_dict().items()
             }
         )
-        
+
         self.current_grads = {
             name: param.grad.cpu().clone().detach()
             for name, param in self.model.named_parameters()
@@ -635,7 +673,7 @@ class OTI(EarlyTrain):
         scores = self._compute_scores(
             best_params, epoch_lr, use_regularization, device, inputs, targets, true_idx
         )
-        
+
         # pop parameters and gradients and load to model
         for name, param in self.model.named_parameters():
             param.grad = self.current_grads[name].to(device)
@@ -661,22 +699,28 @@ class OTI(EarlyTrain):
         targets: torch.Tensor,
         true_idx: torch.Tensor,
     ) -> torch.Tensor:
-        batch_size = inputs.size(0)  # 256
+        """
+        Compute scores for a batch of samples, with special handling for flipped samples.
+        """
+        batch_size = inputs.size(0)
         initial_distances = torch.zeros(batch_size, device=device)
         pseudo_distances = torch.zeros(batch_size, device=device)
 
-        # 计算当前参数与最佳参数的距离
+        # Calculate initial distances
         for name, param in self.model.named_parameters():
             if name in best_params:
                 param_diff = param - best_params[name]
                 initial_distances += torch.norm(param_diff.view(1, -1), dim=1)
 
-        # 遍历每个样本，逐个计算梯度
+        # Process each sample individually
         for i in range(batch_size):
             true_idx_i = true_idx[i].item()
-            if true_idx_i not in self.dst_train.get_flipped_selection_from():
+
+            # Skip if sample is not in scores_indices
+            if self.scores_indices and true_idx_i not in self.scores_indices:
                 continue
-            # 清空之前的梯度
+
+            # Clear previous gradients
             self.model_optimizer.zero_grad()
             if i % self.args.print_freq == 0:
                 self.logger.debug(
@@ -689,45 +733,39 @@ class OTI(EarlyTrain):
             output_i = self.model(input_i)
             loss_i = self.criterion(output_i, target_i)
 
-            # 反向传播计算梯度
+            # Backward pass
             loss_i.backward(retain_graph=True)
 
-            # 对每个参数逐一计算梯度和伪距离
+            # Calculate pseudo-parameters and distances
             for name, param in self.model.named_parameters():
-                if name in best_params:
-                    # 获取当前样本对参数的梯度
-                    grad_i = param.grad  # 当前样本的梯度，形状与参数相同
+                if name in best_params and param.grad is not None:
+                    grad_i = param.grad
 
-                    if grad_i is not None:
-                        # 打印调试信息
-                        # print(f"Parameter {name} shape: {param.shape}")
-                        # print(f"Gradient shape: {grad_i.shape}")
+                    # Flatten tensors for distance calculation
+                    param_flat = param.view(1, -1)
+                    grad_flat = grad_i.view(1, -1)
+                    best_param_flat = best_params[name].view(1, -1)
 
-                        # 展平参数和梯度
-                        param_flat = param.view(1, -1)  # (1, num_params)
-                        grad_flat = grad_i.view(1, -1)  # (1, num_params)
-                        best_param_flat = best_params[name].view(
-                            1, -1
-                        )  # (1, num_params)
+                    # Calculate pseudo-parameter and its distance to best parameter
+                    pseudo_param = param_flat - epoch_lr * grad_flat
+                    param_diff_pseudo = pseudo_param - best_param_flat
 
-                        # 计算伪参数和伪距离
-                        pseudo_param = param_flat - epoch_lr * grad_flat
-                        param_diff_pseudo = pseudo_param - best_param_flat
+                    # Update pseudo-distances
+                    pseudo_distances[i] += torch.norm(param_diff_pseudo, dim=1).item()
 
-                        # 更新伪距离
-                        curr_distance = torch.norm(param_diff_pseudo, dim=1)
-                        pseudo_distances[i] += curr_distance.item()
-
-        return (
-            torch.where(
-                initial_distances > 0,
+        # Calculate final scores
+        scores = torch.where(
+            initial_distances > 0,
+            (
                 (initial_distances - pseudo_distances)
-                / (initial_distances + pseudo_distances),
-                torch.zeros_like(initial_distances),
-            )
-            if use_regularization
-            else initial_distances - pseudo_distances
+                / (initial_distances + pseudo_distances)
+                if use_regularization
+                else initial_distances - pseudo_distances
+            ),
+            torch.zeros_like(initial_distances),
         )
+
+        return scores
 
     def _load_scores(self):
         """Load pre-computed scores from file"""
@@ -782,40 +820,47 @@ class OTI(EarlyTrain):
         """
 
         selected_df = df[df["index"].isin(selected_indices)]
-        selected_csv_path = os.path.join(self.args.save_path, "oti_selected_scores.csv")
-        selected_df.to_csv(selected_csv_path, index=False)
-        self.logger.info(f"[OTI] Saved selected scores to {selected_csv_path}")
-
+        self._save_epoch_scores_to_csv(
+            "oti_selected_scores.csv",
+            selected_df,
+            '[OTI] Saved selected scores to ',
+        )
         self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
         self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
 
     def _select_top_k_scores(self, score_array, indices):
         """
-        Select the top-k scores from the given score array and indices, save the results to a CSV file,
-        and return the DataFrame, top-k value, and selected indices.
-        Args:
-            score_array (np.ndarray): Array of scores.
-            indices (np.ndarray): Array of indices corresponding to the scores.
-        Returns:
-            pd.DataFrame: DataFrame containing indices and scores sorted in descending order.
-            int: The number of top-k samples selected.
-            np.ndarray: Array of selected indices based on the top-k scores.
+        Select top-k scores with priority for flipped samples.
         """
-
         df = pd.DataFrame({"index": indices, "score": score_array})
 
-        # Sort DataFrame by score in descending order
+        # Mark flipped samples in DataFrame
+        df["is_flipped"] = df["index"].isin(self.flipped_indices)
+
+        # Sort by score in descending order
         df = df.sort_values("score", ascending=False)
 
-        # Save to CSV
-        csv_path = os.path.join(self.args.save_path, "oti_scores.csv")
-        df.to_csv(csv_path, index=False)
-        self.logger.info(f"[OTI] Saved scores to {csv_path}")
-
-        # Select top-k samples based on the scores
+        self._save_epoch_scores_to_csv(
+            "oti_scores.csv", df, '[OTI] Saved scores to '
+        )
+        # Select top-k samples
         top_k = self.coreset_size
         selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
+
+        # Log flipped samples detection
+        if self.flipped_indices:
+            detected_flipped = set(selected_indices) & set(self.flipped_indices)
+            self.logger.info(
+                f"[OTI] Detected {len(detected_flipped)} out of {len(self.flipped_indices)} flipped samples"
+            )
+
         return df, top_k, selected_indices
+
+    # TODO Rename this here and in `_single_gpu_calculate_scores`, `_save_selected_scores` and `_select_top_k_scores`
+    def _save_epoch_scores_to_csv(self, arg0, arg1, arg2):
+        scores_path = os.path.join(self.args.save_path, arg0)
+        arg1.to_csv(scores_path, index=False)
+        self.logger.info(f"{arg2}{scores_path}")
 
     def _get_score(self, use_regularization, use_learning_rate, use_sliding_window):
         """
