@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 24th November 2024 12:30:45 pm
+# Last Modified: Monday, 25th November 2024 3:54:41 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -36,7 +36,7 @@ from deepcore.datasets.flipped_dataset import IndexedDataset
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from utils import ScoreTracker
+from utils import ScoreTracker, custom_collate
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -405,6 +405,7 @@ class OTI(EarlyTrain):
             shuffle=False,
             num_workers=self.args.workers,
             pin_memory=True,
+            collate_fn=custom_collate
         )
         self.logger.info(
             "Training data loader created with batch size %d and %d workers.",
@@ -572,7 +573,7 @@ class OTI(EarlyTrain):
                         train_indices,
                         true_idx,
                     )
-                    scores[batch_indices] = batch_scores.cpu()
+                    scores[batch_indices.to('cpu')] = batch_scores.cpu()
 
             if return_dict is not None:
                 # 修改此行，断开梯度追踪并确保张量在CPU上
