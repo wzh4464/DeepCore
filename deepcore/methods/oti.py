@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 24th November 2024 12:21:54 pm
+# Last Modified: Sunday, 24th November 2024 12:30:45 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -580,7 +580,7 @@ class OTI(EarlyTrain):
                     scores.detach().cpu()
                 )
                 
-            scores = scores[self.scores_indices] if self.scores_indices else scores
+            # scores = scores[self.scores_indices] if self.scores_indices else scores
 
             return scores
 
