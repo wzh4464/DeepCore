@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:14:21 am
+# Last Modified: Monday, 25th November 2024 12:30:02 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -482,7 +482,11 @@ class EarlyTrain(CoresetMethod):
         elif torch.cuda.device_count() > 1:
             self.model = nets.nets_utils.MyDataParallel(self.model).cuda()
 
-        self.criterion = nn.CrossEntropyLoss().to(self.args.device)
+        # 在 before_run 方法中
+        if self.num_classes == 2:
+            self.criterion = nn.BCEWithLogitsLoss().to(self.args.device)
+        else:
+            self.criterion = nn.CrossEntropyLoss().to(self.args.device)
         self.criterion.__init__()
 
         # Setup optimizer and scheduler
