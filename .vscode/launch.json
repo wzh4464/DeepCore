@@ -335,7 +335,7 @@
                 "--scheduler",
                 "CosineAnnealingLR",
                 "--save_path",
-                "/backup/line1_flip_adult_mlp",
+                "/backup/line1_flip_adult_dnn",
                 "--num_gpus",
                 "1",
                 "--seed",
