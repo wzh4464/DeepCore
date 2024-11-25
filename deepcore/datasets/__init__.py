@@ -7,3 +7,4 @@ from .qmnist import *
 from .svhn import *
 from .tinyimagenet import *
 from .adult import *
+from .news import *

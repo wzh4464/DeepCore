@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 11:16:48 am
+# Last Modified: Monday, 25th November 2024 8:09:29 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -41,7 +41,7 @@ class FlippedDataset(IndexedDataset):
         self.logger = logger
         self.classes = dst_train.classes
 
-        if self.data not in ["mnist", "MNIST", "adult", "Adult"]:
+        if self.data not in ["mnist", "MNIST", "adult", "Adult", "News20"]:
             raise ValueError(f"Dataset {self.data} is not supported.")
 
         torch.manual_seed(self.seed)
@@ -52,8 +52,12 @@ class FlippedDataset(IndexedDataset):
             self._flip_mnist_labels()
         elif self.data.lower() == "adult":
             self._flip_adult_labels()
+        elif self.data.lower() == "news20":
+            self._flip_adult_labels()  # News20 uses same flipping logic as Adult (0 -> 1)
 
-        self.logger.info(f"Flipped {self.num_flip} labels from {self.original_label} to {self.target_label}.")
+        self.logger.info(
+            f"Flipped {self.num_flip} labels from {self.original_label} to {self.target_label}."
+        )
         self.logger.info(f"Flipped indices: {self.flipped_indices_permuted}")
 
     def _flip_mnist_labels(self):
@@ -140,4 +144,3 @@ class FlippedDataset(IndexedDataset):
             list: A list of indices representing the scores dataset.
         """
         return self.scores_indices
-
