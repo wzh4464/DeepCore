@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 24th November 2024 10:22:28 am
+# Last Modified: Monday, 25th November 2024 11:16:48 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -41,17 +41,42 @@ class FlippedDataset(IndexedDataset):
         self.logger = logger
         self.classes = dst_train.classes
 
-        if self.data not in ["mnist", "MNIST"]:
+        if self.data not in ["mnist", "MNIST", "adult", "Adult"]:
             raise ValueError(f"Dataset {self.data} is not supported.")
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
 
-        # 根据排列后的索引获取标签为1的样本
-        self.one_indices = [
-            i for i, idx in enumerate(self.indices) if self.dataset.targets[idx] == 1
-        ]
+        # Get indices based on dataset type
+        if self.data.lower() == "mnist":
+            self._flip_mnist_labels()
+        elif self.data.lower() == "adult":
+            self._flip_adult_labels()
 
+        self.logger.info(f"Flipped {self.num_flip} labels from {self.original_label} to {self.target_label}.")
+        self.logger.info(f"Flipped indices: {self.flipped_indices_permuted}")
+
+    def _flip_mnist_labels(self):
+        """Handle MNIST label flipping (1 -> 7)"""
+        self._setup_label_flipping(1, 7)
+
+    def _flip_adult_labels(self):
+        """Handle Adult dataset label flipping (0 -> 1)"""
+        self._setup_label_flipping(0, 1)
+
+    def _setup_label_flipping(self, original_label_value, target_label_value):
+        self.original_label = original_label_value
+        self.target_label = target_label_value
+        self.one_indices = [
+            i
+            for i, idx in enumerate(self.indices)
+            if self.dataset.targets[idx] == self.original_label
+        ]
+        self._perform_flipping()
+
+    def _perform_flipping(self):
+        """Common flipping logic for all datasets"""
+        # Select indices to flip
         self.flipped_indices_permuted = np.random.choice(
             self.one_indices, size=self.num_flip, replace=False
         )
@@ -77,26 +102,20 @@ class FlippedDataset(IndexedDataset):
             )
             self.scores_indices.extend(additional_indices)
 
-        # 创建新的 targets 映射字典，只存储被翻转的标签
+        # Create flipped targets mapping
         self.flipped_targets = {}
         for idx in self.flipped_indices_permuted:
-            self.flipped_targets[self.indices[idx]] = 7
-
-        self.logger.info(f"Flipped {self.num_flip} labels from 1 to 7.")
-        self.logger.info(f"Flipped indices: {self.flipped_indices_permuted}")
+            self.flipped_targets[self.indices[idx]] = self.target_label
 
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
         data, target = self.dataset[real_idx]
 
-        # 如果这个索引在被翻转的集合中，返回翻转后的标签
+        # Return flipped label if index is in flipped set
         if real_idx in self.flipped_targets:
             target = self.flipped_targets[real_idx]
 
         return data, target, real_idx
-
-    def __len__(self):
-        return len(self.indices)
 
     def get_flipped_indices(self):
         """
@@ -121,3 +140,4 @@ class FlippedDataset(IndexedDataset):
             list: A list of indices representing the scores dataset.
         """
         return self.scores_indices
+
