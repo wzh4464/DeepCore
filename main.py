@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 9:39:03 am
+# Last Modified: Monday, 25th November 2024 12:11:41 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -654,7 +654,7 @@ def initialize_dataset_properties(args):
         datasets.__dict__[args.dataset](args.data_path)
     )
     args.channel, args.im_size, args.num_classes, args.class_names = (
-        channel,
+        dst_train.data.shape[1],
         im_size,
         num_classes,
         class_names,
