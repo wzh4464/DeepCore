@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=flip_MNIST
+#SBATCH --job-name=flip_OTI_Adult
 #SBATCH --output=logs/%x_%j.log
 #SBATCH --error=logs/%x_%j_err.log
 #SBATCH --ntasks=1
@@ -43,8 +43,8 @@ save_path="results/flip_oti_${SLURM_JOB_ID}_${numflip}"
 # Build the command
 cmd=(
     "$PYTHON" "main.py"
-    "--dataset" "MNIST"
-    "--model" "LeNet"
+    "--dataset" "Adult"
+    "--model" "DNN"
     "--selection" "OTI"
     "--exp" "flip"
     "--workers" "4"
@@ -54,6 +54,7 @@ cmd=(
     "--data_path" "./data"
     "--optimizer" "SGD"
     "--lr" "0.1"
+    "--oti_mode" "full"
     "--scheduler" "CosineAnnealingLR"
     "--save_path" "$save_path"
     "--num_gpus" "1"
