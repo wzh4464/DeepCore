@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:25:50 pm
+# Last Modified: Monday, 25th November 2024 9:39:03 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -706,6 +706,7 @@ def initialize_flip_exp(args, seed):
     )
 
     flipped_indices = flipped_dataset.get_flipped_indices()
+    flipped_selection_from = flipped_dataset.get_flipped_selection_from()
 
     # save flipped indices to csv
     flipped_indices_path = os.path.join(args.save_path, "flipped_indices.csv")
@@ -743,7 +744,7 @@ def initialize_flip_exp(args, seed):
 
     # logger.info("Initialize flip experiment successfully.")
 
-    return (flipped_dataset, test_loader, flipped_indices, permuted_indices)
+    return (flipped_dataset, test_loader, flipped_indices, permuted_indices, flipped_selection_from)
 
 
 def initialize_network(args, model, train_loader, checkpoint, start_epoch):
@@ -1080,7 +1081,7 @@ def _perform_flip_experiment(logger, args, start_exp, checkpoint):
         )
         print_experiment_info(args, exp, checkpoint_name)
 
-        (flipped_train_dataset, test_loader, flipped_indices, permuted_indices) = (
+        (flipped_train_dataset, test_loader, flipped_indices, permuted_indices, flipped_selection_from) = (
             initialize_flip_exp(args, args.seed + exp)
         )
 
@@ -1101,8 +1102,10 @@ def _perform_flip_experiment(logger, args, start_exp, checkpoint):
         # RuntimeError: Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy() instead.
         try:
             df = pd.DataFrame(score.detach().numpy())
-        except RuntimeError:
+        except AttributeError:
             df = pd.DataFrame(score)
+            # for compatibility convert score to tensor
+            score = torch.tensor(score)
 
         df.to_csv(f"{args.save_path}/flip_scores_{exp}.csv", index=False)
 
