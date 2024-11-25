@@ -51,7 +51,7 @@ cmd=(
     "--num_exp" "1"
     "--epochs" "5"
     "--selection_epochs" "5"
-    "--data_path" "./data"
+    "--data_path" "./data/adult"
     "--optimizer" "SGD"
     "--lr" "0.1"
     "--oti_mode" "full"
