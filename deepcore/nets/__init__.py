@@ -6,3 +6,4 @@ from .mobilenetv3 import *
 from .resnet import *
 from .vgg import *
 from .wideresnet import *
+from .dnn import *
