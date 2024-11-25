@@ -41,6 +41,7 @@ class GraNd(EarlyTrain):
             )
 
     def before_run(self):
+        super().before_run()
         if isinstance(self.model, MyDataParallel):
             self.model = self.model.module
 
@@ -123,6 +124,7 @@ class GraNd(EarlyTrain):
         ).to(self.args.device)
 
         for self.cur_repeat in range(self.repeat):
+            self.before_run()
             self.run()
             self.random_seed = self.random_seed + 5
 
