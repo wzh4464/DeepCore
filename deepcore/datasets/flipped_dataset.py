@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 5:42:11 pm
+# Last Modified: Tuesday, 26th November 2024 5:44:21 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -123,7 +123,11 @@ class FlippedDataset(IndexedDataset):
 
         # Return flipped label if index is in flipped set
         if real_idx in self.flipped_targets:
-            target = torch.tensor(self.flipped_targets[real_idx], dtype=target.dtype)
+            try:
+                target = torch.tensor(self.flipped_targets[real_idx], dtype=target.dtype)
+            except AttributeError:
+                target = torch.tensor(self.flipped_targets[real_idx])
+                
             # 或者确保使用特定类型：
             # target = torch.tensor(self.flipped_targets[real_idx], dtype=torch.float32)
 
