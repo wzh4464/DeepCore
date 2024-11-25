@@ -354,5 +354,19 @@
             "justMyCode": true,
             "python": "${workspaceFolder}/.venv/bin/python"
         },
+        {
+            "name": "Python: Debug Unittest",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "-m",
+            "args": [
+                "unittest",
+                "tests/test_flipped_dataset.py"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
     ]
 }
