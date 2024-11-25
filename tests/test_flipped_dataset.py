@@ -3,7 +3,7 @@
 # Created Date: Monday, November 25th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 7:58:27 pm
+# Last Modified: Monday, 25th November 2024 8:28:45 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -138,7 +138,7 @@ class TestDatasets(unittest.TestCase):
             original_target = dst_train.targets[idx]
             _, flipped_target, _ = flipped_dataset[list(indices).index(idx)]
             self.assertEqual(original_target.item(), 0)  # Original label should be 0
-            self.assertEqual(flipped_target, 1)  # Flipped label should be 1
+            self.assertEqual(flipped_target.item(), 1)  # Flipped label should be 1
 
     def test_news_flipping(self):
         """Test flipping functionality with News20 dataset"""
@@ -181,7 +181,7 @@ class TestDatasets(unittest.TestCase):
             original_target = dst_train.targets[idx]
             _, flipped_target, _ = flipped_dataset[list(indices).index(idx)]
             self.assertEqual(original_target.item(), 0)  # Original label should be 0
-            self.assertEqual(flipped_target, 1)  # Flipped label should be 1
+            self.assertEqual(flipped_target.item(), 1)  # Flipped label should be 1
 
 
 if __name__ == "__main__":

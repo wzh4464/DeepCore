@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 8:09:29 pm
+# Last Modified: Monday, 25th November 2024 8:26:54 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -25,7 +25,7 @@ class IndexedDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
         data, target = self.dataset[real_idx]
-        return data, target, real_idx
+        return data, target, torch.tensor(real_idx, dtype=torch.long)
 
     def __len__(self):
         return len(self.indices)
@@ -117,9 +117,11 @@ class FlippedDataset(IndexedDataset):
 
         # Return flipped label if index is in flipped set
         if real_idx in self.flipped_targets:
-            target = self.flipped_targets[real_idx]
+            target = torch.tensor(self.flipped_targets[real_idx], dtype=target.dtype)
+            # 或者确保使用特定类型：
+            # target = torch.tensor(self.flipped_targets[real_idx], dtype=torch.float32)
 
-        return data, target, real_idx
+        return data, target, torch.tensor(real_idx, dtype=torch.long)
 
     def get_flipped_indices(self):
         """

@@ -3,7 +3,7 @@
 # Created Date: Monday, November 25th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 7:52:01 pm
+# Last Modified: Monday, 25th November 2024 8:49:04 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -140,4 +140,5 @@ class NewsDataset(Dataset):
         return (self.data[index].float(), self.targets[index].float())
 
     def __len__(self):
-        return len(self.data)
+        # is_train or not
+        return len(self.targets)
