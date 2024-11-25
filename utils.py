@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 18th November 2024 11:57:24 am
+# Last Modified: Monday, 25th November 2024 3:42:53 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -537,3 +537,10 @@ class ScoreTracker:
             "std_scores": stats["std"][sort_idx],
             "variance_scores": stats["variance"][sort_idx],
         }
+
+
+def custom_collate(batch):
+    data = torch.stack([torch.tensor(item[0]) for item in batch])
+    labels = torch.stack([torch.tensor(item[1]) for item in batch])
+    indices = [item[2] for item in batch]
+    return data, labels, indices
