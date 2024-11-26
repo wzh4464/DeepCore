@@ -8,3 +8,4 @@ from .svhn import *
 from .tinyimagenet import *
 from .adult import *
 from .news import *
+from .corrupted_dataset import *

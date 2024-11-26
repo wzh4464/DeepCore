@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 12:11:41 pm
+# Last Modified: Tuesday, 26th November 2024 11:50:34 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -19,6 +19,7 @@ import deepcore.nets as nets
 import deepcore.datasets as datasets
 from deepcore.datasets.flipped_dataset import FlippedDataset
 import deepcore.methods as methods
+from deepcore.datasets.corrupted_dataset import CorruptedDataset
 from deepcore.methods.selection_methods import SELECTION_METHODS
 from deepcore.methods.coresetmethod import CoresetMethod
 from torchvision import transforms
@@ -397,8 +398,15 @@ def parse_args():
         "--exp",
         type=str,
         default="train_and_eval",
-        choices=["train_and_eval", "flip"],
-        help="Specify the experiment mode: 'train_and_eval' or 'flip'. Default is 'train_and_eval'.",
+        choices=["train_and_eval", "flip", "corrupt"],
+        help="Specify the experiment mode: 'train_and_eval', 'flip', or 'corrupt'. Default is 'train_and_eval'.",
+    )
+
+    parser.add_argument(
+        "--num_corrupt",
+        type=int,
+        default=100,
+        help="Number of inputs to corrupt in 'corrupt' mode (default: 100).",
     )
 
     parser.add_argument(
@@ -691,26 +699,37 @@ def initialize_flip_exp(args, seed):
         )
 
         # save permuted indices to csv
-        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",", fmt='%d')
+        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",", fmt="%d")
         logger.info(f"Saved permuted indices to {permuted_indices_path}")
 
     # 创建包含部分翻转样本的训练集
-    flipped_dataset = FlippedDataset(
-        dst_train,
-        permuted_indices,
-        args.num_scores,
-        args.num_flip,
-        args.dataset,
-        args.seed,
-        logger,
-    )
+    if args.exp == "flip":
+        flipped_dataset = FlippedDataset(
+            dst_train,
+            permuted_indices,
+            args.num_scores,
+            args.num_flip,
+            args.dataset,
+            args.seed,
+            logger,
+        )
+    else:
+        flipped_dataset = CorruptedDataset(
+            dataset=dst_train,
+            indices=permuted_indices,
+            num_scores=args.num_scores,
+            num_corrupt=args.num_corrupt,
+            dataset_name=args.dataset,
+            seed=args.seed,
+            logger=logger,
+        )
 
     flipped_indices = flipped_dataset.get_flipped_indices()
     flipped_selection_from = flipped_dataset.get_flipped_selection_from()
 
     # save flipped indices to csv
     flipped_indices_path = os.path.join(args.save_path, "flipped_indices.csv")
-    np.savetxt(flipped_indices_path, flipped_indices, delimiter=",", fmt='%d')
+    np.savetxt(flipped_indices_path, flipped_indices, delimiter=",", fmt="%d")
     logger.info(f"Saved flipped indices to {flipped_indices_path}")
 
     # flipped_train_loader = torch.utils.data.DataLoader(
@@ -738,13 +757,19 @@ def initialize_flip_exp(args, seed):
     #         "flipped": [i in flipped_indices for i in permuted_indices],
     #     }
     # )
-    
+
     # df.to_csv(os.path.join(args.save_path, "permuted_df.csv"), index=False)
     # logger.info(f"Saved permuted df to {os.path.join(args.save_path, 'permuted_df.csv')}")
 
     # logger.info("Initialize flip experiment successfully.")
 
-    return (flipped_dataset, test_loader, flipped_indices, permuted_indices, flipped_selection_from)
+    return (
+        flipped_dataset,
+        test_loader,
+        flipped_indices,
+        permuted_indices,
+        flipped_selection_from,
+    )
 
 
 def initialize_network(args, model, train_loader, checkpoint, start_epoch):
@@ -1032,7 +1057,7 @@ def run_experiment(args, checkpoint, start_exp, start_epoch):
             start_epoch = 0
             checkpoint = {}
             sleep(2)
-    elif args.exp == "flip":
+    elif args.exp == "flip" or args.exp == "corrupt":
         _export_flipped_scores_summary(logger, args, start_exp, checkpoint)
 
 
@@ -1081,9 +1106,13 @@ def _perform_flip_experiment(logger, args, start_exp, checkpoint):
         )
         print_experiment_info(args, exp, checkpoint_name)
 
-        (flipped_train_dataset, test_loader, flipped_indices, permuted_indices, flipped_selection_from) = (
-            initialize_flip_exp(args, args.seed + exp)
-        )
+        (
+            flipped_train_dataset,
+            test_loader,
+            flipped_indices,
+            permuted_indices,
+            flipped_selection_from,
+        ) = initialize_flip_exp(args, args.seed + exp)
 
         method_class = SELECTION_METHODS.get(args.selection)
 
