@@ -3,7 +3,7 @@
 # Created Date: Tuesday, November 26th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 11:37:18 am
+# Last Modified: Tuesday, 26th November 2024 5:14:09 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -17,14 +17,16 @@ import torch
 import numpy as np
 from torchvision import transforms
 from torch.utils.data import Dataset
-from .flipped_dataset import IndexedDataset
+from .flipped_dataset import IndexedDataset, FlippedDataset
 
 
-class CorruptedDataset(IndexedDataset):
+class CorruptedDataset(FlippedDataset):
     def __init__(
         self, dataset, indices, num_scores, num_corrupt, dataset_name, seed, logger
     ):
-        super().__init__(dataset, indices)
+        self.dataset = dataset
+        self.indices = indices
+        self.targets = dataset.targets
         self.num_scores = num_scores
         self.num_corrupt = num_corrupt
         self.data = dataset_name.lower()
@@ -35,7 +37,7 @@ class CorruptedDataset(IndexedDataset):
         np.random.seed(self.seed)
 
         # 定义高斯模糊变换
-        self.corruption = transforms.GaussianBlur(kernel_size=(5, 5), sigma=(0.1, 2.0))
+        self.corruption = transforms.GaussianBlur(kernel_size=(5, 5), sigma=(5.0,5.0))
 
         # 从数据集中随机选择需要进行模糊处理的样本索引
         self.corrupted_indices_permuted = np.random.choice(
@@ -62,6 +64,9 @@ class CorruptedDataset(IndexedDataset):
                 replace=False,
             )
             self.scores_indices.extend(additional_indices)
+            
+        if self.data.lower() == "mnist":
+            self.classes = dataset.classes
 
         self.logger.info(
             f"Corrupted {len(self.corrupted_indices_unpermuted)} inputs with Gaussian blur."
@@ -85,3 +90,11 @@ class CorruptedDataset(IndexedDataset):
     def get_corrupted_selection_from(self):
         """获取用于计算分数的样本的真实索引"""
         return self.scores_indices
+
+    def get_flipped_selection_from(self):
+        """获取用于计算分数的样本的真实索引"""
+        return self.get_corrupted_selection_from()
+
+    def get_flipped_indices(self):
+        """获取被模糊处理的样本的真实索引"""
+        return self.get_corrupted_indices()

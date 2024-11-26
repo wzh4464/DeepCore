@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 8:26:54 pm
+# Last Modified: Tuesday, 26th November 2024 4:30:19 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -81,6 +81,17 @@ class FlippedDataset(IndexedDataset):
     def _perform_flipping(self):
         """Common flipping logic for all datasets"""
         # Select indices to flip
+        self.select_flipped_indices()
+
+        # Create flipped targets mapping
+        self.map_flipped_targets()
+
+    def map_flipped_targets(self):
+        self.flipped_targets = {}
+        for idx in self.flipped_indices_permuted:
+            self.flipped_targets[self.indices[idx]] = self.target_label
+
+    def select_flipped_indices(self):
         self.flipped_indices_permuted = np.random.choice(
             self.one_indices, size=self.num_flip, replace=False
         )
@@ -105,11 +116,6 @@ class FlippedDataset(IndexedDataset):
                 replace=False,
             )
             self.scores_indices.extend(additional_indices)
-
-        # Create flipped targets mapping
-        self.flipped_targets = {}
-        for idx in self.flipped_indices_permuted:
-            self.flipped_targets[self.indices[idx]] = self.target_label
 
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
