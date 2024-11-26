@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 5:12:32 pm
+# Last Modified: Tuesday, 26th November 2024 6:01:34 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -405,7 +405,7 @@ class OTI(EarlyTrain):
             shuffle=False,
             num_workers=self.args.workers,
             pin_memory=True,
-            collate_fn=custom_collate
+            collate_fn=custom_collate,
         )
         self.logger.info(
             "Training data loader created with batch size %d and %d workers.",
@@ -504,11 +504,10 @@ class OTI(EarlyTrain):
             scores_per_epoch.append(scores)
 
             # 统计当前 epoch 中检测到的 flipped samples
-            num_detected = self._count_detected_flipped_samples(scores)
-            self.detected_flipped_per_epoch.append({
-                'epoch': epoch,
-                'detected': num_detected
-            })
+            num_detected = self.count_flipped_in_lowest_scores(self.logger, self.args, self.flipped_indices, scores)
+            self.detected_flipped_per_epoch.append(
+                {"epoch": epoch, "detected": num_detected}
+            )
             self.logger.info(
                 f"[OTI] Epoch {epoch}: Detected {num_detected}/{len(self.flipped_indices)} flipped samples."
             )
@@ -583,14 +582,14 @@ class OTI(EarlyTrain):
                         train_indices,
                         true_idx,
                     )
-                    scores[batch_indices.to('cpu')] = batch_scores.cpu()
+                    scores[batch_indices.to("cpu")] = batch_scores.cpu()
 
             if return_dict is not None:
                 # 修改此行，断开梯度追踪并确保张量在CPU上
                 return_dict[worker_id if worker_id is not None else device_id] = (
                     scores.detach().cpu()
                 )
-                
+
             # scores = scores[self.scores_indices] if self.scores_indices else scores
 
             return scores
@@ -604,6 +603,17 @@ class OTI(EarlyTrain):
             #         torch.zeros(len(train_indices))
             #     )
             # return torch.zeros(len(train_indices))
+
+    def count_flipped_in_lowest_scores(
+        self, logger, args, flipped_indices, average_score
+    ):
+        num_flipped_in_lowest_scores = sum(
+            idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
+        )
+        logger.info(
+            f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
+        )
+        return num_flipped_in_lowest_scores
 
     def _setup_optimizer_scheduler(self, use_learning_rate: bool):
         if use_learning_rate:
@@ -834,7 +844,7 @@ class OTI(EarlyTrain):
         self._save_epoch_scores_to_csv(
             "oti_selected_scores.csv",
             selected_df,
-            '[OTI] Saved selected scores to ',
+            "[OTI] Saved selected scores to ",
         )
         self.logger.info(f"[OTI] Selected {top_k} samples based on scores.")
         self.logger.info(f"[OTI] Selected scores: {score_array[selected_indices]}")
@@ -851,9 +861,7 @@ class OTI(EarlyTrain):
         # Sort by score in descending order
         df = df.sort_values("score", ascending=False)
 
-        self._save_epoch_scores_to_csv(
-            "oti_scores.csv", df, '[OTI] Saved scores to '
-        )
+        self._save_epoch_scores_to_csv("oti_scores.csv", df, "[OTI] Saved scores to ")
         # Select top-k samples
         top_k = self.coreset_size
         selected_indices = indices[np.argsort(score_array)[::-1][:top_k]]
@@ -867,11 +875,10 @@ class OTI(EarlyTrain):
 
         return df, top_k, selected_indices
 
-    # TODO Rename this here and in `_single_gpu_calculate_scores`, `_save_selected_scores` and `_select_top_k_scores`
-    def _save_epoch_scores_to_csv(self, arg0, arg1, arg2):
-        scores_path = os.path.join(self.args.save_path, arg0)
-        arg1.to_csv(scores_path, index=False)
-        self.logger.info(f"{arg2}{scores_path}")
+    def _save_epoch_scores_to_csv(self, filename, scores_dataframe, message_prefix):
+        scores_path = os.path.join(self.args.save_path, filename)
+        scores_dataframe.to_csv(scores_path, index=False)
+        self.logger.info(f"{message_prefix}{scores_path}")
 
     def _get_score(self, use_regularization, use_learning_rate, use_sliding_window):
         """

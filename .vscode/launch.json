@@ -195,7 +195,7 @@
                 "--num_scores",
                 "100",
                 "--num_flip",
-                "10",
+                "20",
                 "--oti_mode",
                 "stored",
                 // "--log_level",

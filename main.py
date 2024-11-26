@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 4:40:14 pm
+# Last Modified: Tuesday, 26th November 2024 5:56:41 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -1074,12 +1074,18 @@ def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
     df.to_csv(f"{args.save_path}/average_score_{args.timestamp}.csv", index=False)
 
     # find num_flip samples with the lowest average_score, see how many of them are flipped
+    count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)
+
+
+def count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score):
     num_flipped_in_lowest_scores = sum(
         idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
     )
     logger.info(
         f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
     )
+
+    return num_flipped_in_lowest_scores
 
 
 def _calculate_average_score(scores, logger, **kwargs):
