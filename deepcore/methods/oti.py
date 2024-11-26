@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 3:54:41 pm
+# Last Modified: Tuesday, 26th November 2024 5:12:32 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -487,32 +487,42 @@ class OTI(EarlyTrain):
         for name, param in best_params.items():
             best_params[name] = param.to(device_id)
 
-        # Calculate scores
+        self.detected_flipped_per_epoch = []
+        scores_per_epoch = []
+
         for epoch in range(self.epochs):
-            scores.append(
-                self._calculate_scores_on_device(
-                    device_id,
-                    [epoch],
-                    best_params,
-                    use_regularization,
-                    use_learning_rate,
-                    return_dict,
-                )
+            # 计算当前 epoch 的 scores
+            scores = self._calculate_scores_on_device(
+                device_id,
+                [epoch],
+                self.best_params,
+                use_regularization,
+                use_learning_rate,
+                None,
+            )
+            # 保存 scores
+            scores_per_epoch.append(scores)
+
+            # 统计当前 epoch 中检测到的 flipped samples
+            num_detected = self._count_detected_flipped_samples(scores)
+            self.detected_flipped_per_epoch.append({
+                'epoch': epoch,
+                'detected': num_detected
+            })
+            self.logger.info(
+                f"[OTI] Epoch {epoch}: Detected {num_detected}/{len(self.flipped_indices)} flipped samples."
             )
 
-        # save scores to csv, and then sum them up and to torch tensor and return
-        scores_df = pd.DataFrame({
-            'epoch': range(self.epochs),
-            'scores': [s.mean().item() for s in scores]
-        })
-        self._save_epoch_scores_to_csv(
-            "epoch_scores.csv", scores_df, '[OTI] Saved epoch scores to '
-        )
-        # Stack scores and compute mean across epochs
-        stacked_scores = torch.stack(scores)
-        final_scores = torch.mean(stacked_scores, dim=0)
-
+        # 计算最终的 scores
+        final_scores = torch.mean(torch.stack(scores_per_epoch), dim=0)
         return final_scores
+
+    def _count_detected_flipped_samples(self, scores):
+        top_k = len(self.flipped_indices)
+        top_scores, top_indices = torch.topk(scores, top_k)
+        detected_flipped = set(top_indices.cpu().numpy()) & set(self.flipped_indices)
+        num_detected = len(detected_flipped)
+        return num_detected
 
     def _multi_gpu_calculate_scores(
         self,
