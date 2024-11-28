@@ -40,7 +40,7 @@
                 "--num_gpus",
                 "1",
                 "--seed",
-                "0",
+                "${input:seed}",
                 "--delta_min",
                 "1",
                 "--delta_max",
@@ -472,6 +472,14 @@
             "console": "internalConsole",
             "justMyCode": true,
             "python": "${workspaceFolder}/.venv/bin/python"
-        },
+        }
+    ],
+    "inputs": [
+        {
+            "id": "seed",
+            "type": "promptString",
+            "description": "请输入seed��",
+            "default": "0"
+        }
     ]
 }
