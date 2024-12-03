@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 12:30:02 pm
+# Last Modified: Thursday, 28th November 2024 11:33:36 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -256,7 +256,11 @@ class EarlyTrain(CoresetMethod):
         self.logger.info("run()")
 
         for epoch in range(self.epochs):
-            dst_train = self.dst_pretrain_dict["dst_train"] if self.if_dst_pretrain else self.dst_train
+            dst_train = (
+                self.dst_pretrain_dict["dst_train"]
+                if self.if_dst_pretrain
+                else self.dst_train
+            )
             list_of_train_idx = dst_train.indices.tolist()
             self.before_epoch()
             self.train(epoch, list_of_train_idx)

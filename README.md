@@ -1,174 +1,121 @@
-# DeepCore: A Comprehensive Library for Coreset Selection in Deep Learning [PDF](https://arxiv.org/pdf/2204.08499.pdf)
+# LiveVal: Time-aware Data Valuation for SGD-trained Models via Adaptive Reference Points
 
-## Introduction
+This repository contains the official implementation of LiveVal, a novel approach for time-aware data valuation in SGD-trained models. LiveVal introduces an adaptive reference points mechanism that dynamically evaluates the importance of training samples during the model training process.
 
-To advance the research of coreset selection in deep learning, we contribute a code library named **DeepCore**, an extensive and extendable code library, for coreset selection in deep learning, reproducing dozens of popular and advanced coreset selection methods and enabling a fair comparison of different methods in the same experimental settings. **DeepCore** is highly modular, allowing to add new architectures, datasets, methods and learning scenarios easily. It is built on PyTorch.
+## Overview
 
-## Coreset Methods
+LiveVal extends the Online Training Influence (OTI) method by incorporating time-aware data valuation through adaptive reference points. This approach allows for more accurate assessment of training samples' contributions to model performance.
 
-We list the methods in DeepCore according to the categories in our original paper, they are 1) geometry based methods Contextual Diversity (CD), Herding  and k-Center Greedy; 2) uncertainty scores; 3) error based methods Forgetting  and GraNd score ; 4) decision boundary based methods Cal  and DeepFool ; 5) gradient matching based methods Craig  and GradMatch ; 6) bilevel optimiza- tion methods Glister ; and 7) Submodularity based Methods (GC) and Facility Location (FL) functions. we also have Random selection as the baseline.
+## Key Features
 
-## Datasets
+- **Adaptive Reference Points**: Dynamically adjusts reference points based on loss changes during training
+- **Time-Aware Valuation**: Considers temporal aspects of training dynamics
+- **Memory-Efficient**: Optimized implementation for handling large-scale datasets
+- **Multiple Dataset Support**: Works with various datasets including MNIST, CIFAR10, and custom datasets
+- **Flexible Model Architecture**: Compatible with different neural network architectures
 
-It contains a series of other popular computer vision datasets, namely MNIST, QMNIST, FashionMNIST, SVHN, CIFAR10, CIFAR100 and TinyImageNet and ImageNet.
+## Installation
 
-## Models
+```bash
+# Clone the repository
+git clone https://github.com/LiveVal/LiveVal.git
+cd LiveVal
 
-They are two-layer fully connected MLP, LeNet , AlexNet, VGG, Inception-v3, ResNet, WideResNet and MobileNet-v3.
+# Create and activate a virtual environment
+conda create -p $PWD/.venv python=3.12
+conda activate $PWD/.venv
 
-## Example
-
-Selecting with Glister and training on the coreset with fraction 0.1.
-
-```sh
-CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Glister --model InceptionV3 --lr 0.1 -sp ./result --batch 128
+# Install dependencies
+conda install -p $PWD/.venv --file spec-file.txt
+pip install -r requirements.txt
 ```
 
-Resuming interuppted training with argument ```--resume```.
+## Usage
 
-```sh
-CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Glister --model InceptionV3 --lr 0.1 -sp ./result --batch 128 --resume "CIFAR10_InceptionV3_Glister_exp0_epoch200_2022-02-05 21:31:53.762903_0.1_unknown.ckpt"
+### Basic Training
+
+```bash
+python main.py \
+    --dataset MNIST \
+    --model LeNet \
+    --selection AD_OTI \
+    --num_exp 1 \
+    --epochs 5 \
+    --selection_epochs 5 \
+    --data_path ./data \
+    --gpu 0 \
+    --optimizer SGD \
+    --lr 0.1 \
+    --scheduler CosineAnnealingLR \
+    --save_path ./results \
+    --num_gpus 1
 ```
 
-Batch size can be seperatedly assigned for both selection and training.
+### Advanced Configuration
 
-```sh
-CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.5 --dataset ImageNet --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Cal --model MobileNetV3Large --lr 0.1 -sp ./result -tb 256 -sb 128
+LiveVal supports various hyperparameters for fine-tuning the adaptive reference points:
+
+```bash
+python main.py \
+    --delta_min 1 \
+    --delta_max 20 \
+    --delta_step 3 \
+    --eps_min 0.005 \
+    --eps_max 0.01 \
+    --oti_mode full
 ```
 
-Argument ```--uncertainty``` to choose uncertainty scores.
+### Using SLURM
 
-```sh
-CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Uncertainty --model ResNet18 --lr 0.1 -sp ./result --batch 128 --uncertainty Entropy
+The repository includes SLURM job scripts for cluster environments:
+
+```bash
+sbatch slurm_job.sh \
+    --mode AD_OTI \
+    --regularization 1 \
+    --learning_rate 1 \
+    --adoti_mode full \
+    --delta_min 1 \
+    --delta_max 20 \
+    --delta_step 3 \
+    --eps_min 0.005 \
+    --eps_max 0.01
 ```
 
-Argument ```--submodular``` to choose submodular function, e.g. ```GraphCut```, ```FacilityLocation``` or ```LogDeterminant```. You may also specify the type of greedy algorithm to use when maximizing functions with argument ```--submodular_greedy```, for example ```NaiveGreedy```, ```LazyGreedy```, ```StochasticGreedy```, etc.
+## Key Parameters
 
-```sh
-CUDA_VISIBLE_DEVICES=0 python -u main.py --fraction 0.1 --dataset CIFAR10 --data_path ~/datasets --num_exp 5 --workers 10 --optimizer SGD -se 10 --selection Submodular --model ResNet18 --lr 0.1 -sp ./result --batch 128 --submodular GraphCut --submodular_greedy NaiveGreedy
+- `delta_min`: Minimum window size for reference points (default: 1)
+- `delta_max`: Maximum window size for reference points (default: 3)
+- `delta_step`: Step size for window adjustment (default: 1)
+- `eps_min`: Lower threshold for loss change (default: 0.1)
+- `eps_max`: Upper threshold for loss change (default: 0.05)
+- `oti_mode`: Operation mode ['full', 'stored', 'scores']
+
+## Project Structure
+
+```
+.
+├── main.py              # Main entry point
+├── deepcore/
+│   ├── methods/
+│   │   ├── oti.py      # Base OTI implementation
+│   │   ├── ad_oti.py   # Adaptive OTI implementation
+│   │   └── ...
+│   ├── datasets/
+│   │   └── ...         # Dataset implementations
+│   └── nets/
+│       └── ...         # Neural network architectures
+└── utils/              # Utility functions
 ```
 
-## Extend
+## Contributing
 
-DeepCore is highly modular and scalable. It allows to add new architectures, datasets and selection methods easily, to help coreset methods to be evaluated in a richer set of scenarios, and also to facilitate new methods for comparison. Here is an example for datasets. To add a new dataset, you need implement a function whose input is the data path and outputs are number of channels, size of image, number of classes, names of classes, mean, std and training and testing dataset inherited from ```torch.utils.data.Dataset```.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-```python
-from torchvision import datasets, transforms
+## License
 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-def MNIST(data_path):
-    channel = 1
-    im_size = (28, 28)
-    num_classes = 10
-    mean = [0.1307]
-    std = [0.3081]
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=mean, std=std)])
-    dst_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
-    dst_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
-    class_names = [str(c) for c in range(num_classes)]
-    return channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test
-```
+## Acknowledgments
 
-This is an example for implementing network architecture.
-
-```python
-import torch.nn as nn
-import torch.nn.functional as F
-from torch import set_grad_enabled
-from .nets_utils import EmbeddingRecorder
-
-
-class MLP(nn.Module):
-    def __init__(self, channel, num_classes, im_size, record_embedding: bool = False, no_grad: bool = False,
-                 pretrained: bool = False):
-        if pretrained:
-            raise NotImplementedError("torchvison pretrained models not available.")
-        super(MLP, self).__init__()
-        self.fc_1 = nn.Linear(im_size[0] * im_size[1] * channel, 128)
-        self.fc_2 = nn.Linear(128, 128)
-        self.fc_3 = nn.Linear(128, num_classes)
-
-        self.embedding_recorder = EmbeddingRecorder(record_embedding)
-        self.no_grad = no_grad
-
-    def get_last_layer(self):
-        return self.fc_3
-
-    def forward(self, x):
-        with set_grad_enabled(not self.no_grad):
-            out = x.view(x.size(0), -1)
-            out = F.relu(self.fc_1(out))
-            out = F.relu(self.fc_2(out))
-            out = self.embedding_recorder(out)
-            out = self.fc_3(out)
-        return out
-```
-
-To implement the new coreset method, you need to inherit the new method from the ```CoresetMethod``` class and return the selected indices via the ```select``` method.
-
-```python
-class CoresetMethod(object):
-    def __init__(self, dst_train, args, fraction=0.5, random_seed=None, **kwargs):
-        if fraction <= 0.0 or fraction > 1.0:
-            raise ValueError("Illegal Coreset Size.")
-        self.dst_train = dst_train
-        self.num_classes = len(dst_train.classes)
-        self.fraction = fraction
-        self.random_seed = random_seed
-        self.index = []
-        self.args = args
-
-        self.n_train = len(dst_train)
-        self.coreset_size = round(self.n_train * fraction)
-
-    def select(self, **kwargs):
-        return
-```
-
-## References
-
-1. Agarwal, S., Arora, H., Anand, S., Arora, C.: Contextual diversity for active learning. In: ECCV. pp. 137–153. Springer (2020)
-2. Coleman, C., Yeh, C., Mussmann, S., Mirzasoleiman, B., Bailis, P., Liang, P., Leskovec, J., Zaharia, M.: Selection via proxy: Efficient data selection for deep learning. In: ICLR (2019)
-3. Ducoffe, M., Precioso, F.: Adversarial active learning for deep networks: a margin based approach. arXiv preprint arXiv:1802.09841 (2018)
-4. Iyer, R., Khargoankar, N., Bilmes, J., Asanani, H.: Submodular combinatorial information measures with applications in machine learning. In: Algorithmic Learning Theory. pp. 722–754. PMLR (2021)
-5. Killamsetty, K., Durga, S., Ramakrishnan, G., De, A., Iyer, R.: Grad-match: Gradient matching based data subset selection for efficient deep model training. In: ICML. pp. 5464–5474 (2021)
-6. Killamsetty, K., Sivasubramanian, D., Ramakrishnan, G., Iyer, R.: Glister: Generalization based data subset selection for efficient and robust learning. In: Proceedings of the AAAI Conference on Artificial Intelligence (2021)
-7. Margatina, K., Vernikos, G., Barrault, L., Aletras, N.: Active learning by acquiring contrastive examples. arXiv preprint arXiv:2109.03764 (2021)
-8. Mirzasoleiman, B., Bilmes, J., Leskovec, J.: Coresets for data-efficient training of machine learning models. In: ICML. PMLR (2020)
-9. Paul, M., Ganguli, S., Dziugaite, G.K.: Deep learning on a data diet: Finding important examples early in training. arXiv preprint arXiv:2107.07075 (2021)
-10. Sener, O., Savarese, S.: Active learning for convolutional neural networks: A coreset approach. In: ICLR (2018)
-11. Toneva, M., Sordoni, A., des Combes, R.T., Trischler, A., Bengio, Y., Gordon, G.J.: An empirical study of example forgetting during deep neural network learning. In: ICLR (2018)
-12. Welling, M.: Herding dynamical weights to learn. In: Proceedings of the 26th Annual International Conference on Machine Learning. pp. 1121–1128 (2009)
-
-```mermaid
-sequenceDiagram
-    participant Main
-    participant EarlyTrain
-    participant Train
-    participant Test
-
-    Main->>EarlyTrain: select()
-    activate EarlyTrain
-    EarlyTrain->>EarlyTrain: before_run()
-    loop For each epoch
-        EarlyTrain->>EarlyTrain: before_epoch()
-        EarlyTrain->>Train: train(epoch, list_of_train_idx)
-        activate Train
-        Train->>Train: before_train()
-        loop For each batch
-            Train->>Train: forward pass
-            Train->>Train: compute loss
-            Train->>Train: after_loss()
-            Train->>Train: while_update()
-            Train->>Train: backward pass
-        end
-        Train->>Train: finish_train()
-        deactivate Train
-        alt If test interval reached
-            EarlyTrain->>Test: test(epoch)
-        end
-        EarlyTrain->>EarlyTrain: after_epoch()
-    end
-    EarlyTrain->>EarlyTrain: finish_run()
-    deactivate EarlyTrain
-```
+This implementation builds upon the original OTI method and extends it with adaptive reference points for time-aware data valuation.

@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 20th November 2024 4:36:05 pm
+# Last Modified: Thursday, 28th November 2024 11:33:44 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -550,8 +550,6 @@ class AD_OTI(OTI):
             )
 
         return cpu_memory, gpu_memory
-
-
 
     def _train_step(
         self, inputs: torch.Tensor, targets: torch.Tensor, step: int, total_steps: int

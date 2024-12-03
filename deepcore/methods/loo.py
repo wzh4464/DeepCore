@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:21:57 am
+# Last Modified: Thursday, 28th November 2024 11:33:26 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -102,7 +102,7 @@ class LOO(InfluenceMethod):
                 f"GPU {device_id}: Processed sample {idx+1}/{len(self.dst_train)}, Loss: {loss} for {i}th sample"
             )
         return local_losses
- 
+
     @override
     def get_scores(self):
         return self.compute_influence_scores()

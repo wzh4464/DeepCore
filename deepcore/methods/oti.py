@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 6:01:34 pm
+# Last Modified: Thursday, 28th November 2024 11:33:23 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -504,7 +504,9 @@ class OTI(EarlyTrain):
             scores_per_epoch.append(scores)
 
             # 统计当前 epoch 中检测到的 flipped samples
-            num_detected = self.count_flipped_in_lowest_scores(self.logger, self.args, self.flipped_indices, scores)
+            num_detected = self.count_flipped_in_lowest_scores(
+                self.logger, self.args, self.flipped_indices, scores
+            )
             self.detected_flipped_per_epoch.append(
                 {"epoch": epoch, "detected": num_detected}
             )
