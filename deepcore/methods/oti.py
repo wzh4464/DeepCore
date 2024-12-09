@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 28th November 2024 11:33:23 am
+# Last Modified: Monday, 9th December 2024 8:25:56 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -387,20 +387,16 @@ class OTI(EarlyTrain):
     def _get_train_loader(self):
         """Create and return training data loader."""
         self.logger.info("Creating training data loader.")
-        # Create a list of indices for training
-        # list_of_train_idx = np.random.choice(
-        #     np.arange(self.n_train), self.n_pretrain_size, replace=False
-        # )
 
-        # Create the indexed dataset
-        indexed_dataset = self.dst_train
-        self.logger.debug(
-            "IndexedDataset created with %d samples.", len(indexed_dataset)
-        )
+        # 创建 IndexedDataset
+        if not isinstance(self.dst_train, IndexedDataset):
+            indices = np.arange(len(self.dst_train))
+            self.dst_train = IndexedDataset(self.dst_train, indices)
+            self.logger.info("Wrapped dataset in IndexedDataset")
 
         # Create DataLoader
         train_loader = torch.utils.data.DataLoader(
-            indexed_dataset,
+            self.dst_train,
             batch_size=self.args.selection_batch,
             shuffle=False,
             num_workers=self.args.workers,
