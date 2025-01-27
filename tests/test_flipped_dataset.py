@@ -3,7 +3,7 @@
 # Created Date: Monday, November 25th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 25th November 2024 8:28:45 pm
+# Last Modified: Monday, 27th January 2025 4:51:14 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -16,9 +16,9 @@ import unittest
 import numpy as np
 import logging
 import torch
-from deepcore.datasets.flipped_dataset import FlippedDataset
-from deepcore.datasets.adult import Adult, AdultDataset
-from deepcore.datasets.news import News20, NewsDataset
+from liveval.datasets.flipped_dataset import FlippedDataset
+from liveval.datasets.adult import Adult, AdultDataset
+from liveval.datasets.news import News20, NewsDataset
 
 
 class TestDatasets(unittest.TestCase):

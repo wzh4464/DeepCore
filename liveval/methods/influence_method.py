@@ -1,9 +1,9 @@
 ###
-# File: ./deepcore/methods/influence_method.py
+# File: ./liveval/methods/influence_method.py
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Saturday, 23rd November 2024 1:32:01 am
+# Last Modified: Monday, 27th January 2025 4:50:35 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:

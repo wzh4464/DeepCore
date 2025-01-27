@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Launch main.py",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "args": [
+                // --dataset MNIST
+                "--dataset", "MNIST",
+                "--selection", "OTI",
+                "--oti_mode", "full",
+                "--epochs", "1",
+                "--num_exp", "1",
+                "--selection_epochs", "1",
+            ]
+        }
+    ]
+}

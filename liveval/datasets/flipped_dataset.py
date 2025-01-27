@@ -1,9 +1,9 @@
 ###
-# File: ./deepcore/datasets/flipped_dataset.py
+# File: ./liveval/datasets/flipped_dataset.py
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 5:44:21 pm
+# Last Modified: Monday, 27th January 2025 4:50:52 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -12,8 +12,10 @@
 ###
 
 
+import os
 import torch
 import numpy as np
+from .cache_utils import DatasetCache
 
 
 class IndexedDataset(torch.utils.data.Dataset):
@@ -41,19 +43,53 @@ class FlippedDataset(IndexedDataset):
         self.logger = logger
         self.classes = dst_train.classes
 
+        # Initialize cache
+        cache_dir = os.path.join("cache", "flipped_datasets")
+        self.cache = DatasetCache(cache_dir, logger)
+
+        # Cache parameters
+        self.cache_params = {
+            "num_scores": num_scores,
+            "num_flip": num_flip,
+            "dataset": dataset,
+            "seed": seed,
+        }
+
         if self.data not in ["mnist", "MNIST", "adult", "Adult", "News20"]:
             raise ValueError(f"Dataset {self.data} is not supported.")
 
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
+        self._initialize_flipped_dataset()
 
-        # Get indices based on dataset type
-        if self.data.lower() == "mnist":
-            self._flip_mnist_labels()
-        elif self.data.lower() == "adult":
-            self._flip_adult_labels()
-        elif self.data.lower() == "news20":
-            self._flip_adult_labels()  # News20 uses same flipping logic as Adult (0 -> 1)
+    def _initialize_flipped_dataset(self):
+        """Initialize the flipped dataset using cache if available."""
+        cache_path = self.cache.get_cache_path("flipped", **self.cache_params)
+
+        def create_flipped_data():
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)
+
+            if self.data.lower() == "mnist":
+                self._flip_mnist_labels()
+            elif self.data.lower() == "adult":
+                self._flip_adult_labels()
+            elif self.data.lower() == "news20":
+                self._flip_adult_labels()
+
+            return {
+                "flipped_indices_permuted": self.flipped_indices_permuted,
+                "flipped_indices_unpermuted": self.flipped_indices_unpermuted,
+                "scores_indices": self.scores_indices,
+                "flipped_targets": self.flipped_targets,
+                "original_label": self.original_label,
+                "target_label": self.target_label,
+            }
+
+        # Load or create flipped dataset
+        cached_data = self.cache.load_or_create(cache_path, create_flipped_data)
+
+        # Restore cached data
+        for key, value in cached_data.items():
+            setattr(self, key, value)
 
         self.logger.info(
             f"Flipped {self.num_flip} labels from {self.original_label} to {self.target_label}."
@@ -87,9 +123,10 @@ class FlippedDataset(IndexedDataset):
         self.map_flipped_targets()
 
     def map_flipped_targets(self):
-        self.flipped_targets = {}
-        for idx in self.flipped_indices_permuted:
-            self.flipped_targets[self.indices[idx]] = self.target_label
+        self.flipped_targets = {
+            self.indices[idx]: self.target_label
+            for idx in self.flipped_indices_permuted
+        }
 
     def select_flipped_indices(self):
         self.flipped_indices_permuted = np.random.choice(
@@ -124,10 +161,12 @@ class FlippedDataset(IndexedDataset):
         # Return flipped label if index is in flipped set
         if real_idx in self.flipped_targets:
             try:
-                target = torch.tensor(self.flipped_targets[real_idx], dtype=target.dtype)
+                target = torch.tensor(
+                    self.flipped_targets[real_idx], dtype=target.dtype
+                )
             except AttributeError:
                 target = torch.tensor(self.flipped_targets[real_idx])
-                
+
             # 或者确保使用特定类型：
             # target = torch.tensor(self.flipped_targets[real_idx], dtype=torch.float32)
 

@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 5:56:41 pm
+# Last Modified: Monday, 27th January 2025 4:50:15 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -15,13 +15,13 @@ import multiprocessing
 import os
 import torch.nn as nn
 import argparse
-import deepcore.nets as nets
-import deepcore.datasets as datasets
-from deepcore.datasets.flipped_dataset import FlippedDataset
-import deepcore.methods as methods
-from deepcore.datasets.corrupted_dataset import CorruptedDataset
-from deepcore.methods.selection_methods import SELECTION_METHODS
-from deepcore.methods.coresetmethod import CoresetMethod
+import liveval.nets as nets
+import liveval.datasets as datasets
+from liveval.datasets.flipped_dataset import FlippedDataset
+import liveval.methods as methods
+from liveval.datasets.corrupted_dataset import CorruptedDataset
+from liveval.methods.selection_methods import SELECTION_METHODS
+from liveval.methods.coresetmethod import CoresetMethod
 from torchvision import transforms
 from utils import *
 from datetime import datetime

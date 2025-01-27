@@ -96,7 +96,7 @@ sbatch slurm_job.sh \
 ```
 .
 ├── main.py              # Main entry point
-├── deepcore/
+├── liveval/
 │   ├── methods/
 │   │   ├── oti.py      # Base OTI implementation
 │   │   ├── ad_oti.py   # Adaptive OTI implementation

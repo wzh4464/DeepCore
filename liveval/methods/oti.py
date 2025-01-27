@@ -1,9 +1,9 @@
 ###
-# File: ./deepcore/methods/oti.py
+# File: ./liveval/methods/oti.py
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 9th December 2024 8:25:56 pm
+# Last Modified: Monday, 27th January 2025 4:50:31 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -31,7 +31,7 @@ import logging
 from typing import Dict, Optional, Tuple, override
 import pandas as pd
 from torch.utils.data import DataLoader
-from deepcore.datasets.flipped_dataset import IndexedDataset
+from liveval.datasets.flipped_dataset import IndexedDataset
 
 import sys
 

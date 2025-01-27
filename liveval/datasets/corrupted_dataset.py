@@ -1,9 +1,9 @@
 ###
-# File: ./deepcore/datasets/ corrupted_dataset.py
+# File: ./liveval/datasets/ corrupted_dataset.py
 # Created Date: Tuesday, November 26th 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 26th November 2024 5:14:09 pm
+# Last Modified: Monday, 27th January 2025 4:50:58 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -11,7 +11,7 @@
 # ----------		------	---------------------------------------------------------
 ###
 
-# 文件路径：./deepcore/datasets/corrupted_dataset.py
+# 文件路径：./liveval/datasets/corrupted_dataset.py
 
 import torch
 import numpy as np
