@@ -404,13 +404,13 @@ class OTI(EarlyTrain):
             pin_memory=True,
             collate_fn=custom_collate,
         )
-        
+
         self.logger.info(
             "Training data loader created with batch size %d and %d workers.",
             self.args.selection_batch,
             self.args.workers,
         )
-        
+
         return train_loader, self.dst_train.indices
 
     def _init_multiprocessing(self):
@@ -516,8 +516,8 @@ class OTI(EarlyTrain):
         # 计算最终的 scores
         final_scores = torch.mean(torch.stack(scores_per_epoch), dim=0)
 
-        final_scores[final_scores == 0.0] = float('nan')
-        
+        final_scores[final_scores == 0.0] = float("nan")
+
         return final_scores
 
     def _count_detected_flipped_samples(self, scores):

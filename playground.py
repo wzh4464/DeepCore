@@ -2,8 +2,13 @@
 import pandas as pd
 
 # Read CSV files without header
-scores = pd.read_csv("results/flip_TracIn_30/flip_scores_0.csv")
-flipped_indices = pd.read_csv("results/flip_TracIn_30/flipped_indices.csv", header=None)
+scores = pd.read_csv("results/flip_TracIn_1697_30/flip_scores_0.csv")
+flipped_indices = pd.read_csv("results/flip_TracIn_1697_30/flipped_indices.csv", header=None)
+
+# results/flip_TracIn_1696_40
+# results/flip_TracIn_1697_30
+# results/flip_TracIn_1698_20
+# results/flip_TracIn_1699_10
 
 # Assign column name
 scores.columns = ["score"]

@@ -63,7 +63,7 @@ cmd=(
     "--selection_epochs" "5"
     "--data_path" "./data"
     "--optimizer" "SGD"
-    "--lr" "0.1"
+    "--lr" "0.001"
     "--scheduler" "CosineAnnealingLR"
     "--save_path" "$save_path"
     "--num_gpus" "1"

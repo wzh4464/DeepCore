@@ -111,15 +111,12 @@ class TracIn(EarlyTrain):
     @override
     def after_epoch(self):
         """
-        After each epoch, save model checkpoint if it's a checkpoint epoch.
+        After each epoch, save model checkpoint if it's the first epoch.
         """
         super().after_epoch()
 
-        # Save checkpoint at specified intervals
-        if (
-            self.current_epoch % self.checkpoint_interval == 0
-            or self.current_epoch == self.epochs - 1
-        ):
+        # Save checkpoint only at the first epoch
+        if self.current_epoch == 0:
             self.logger.info(f"Saving checkpoint at epoch {self.current_epoch}")
 
             # Save model parameters
@@ -284,10 +281,10 @@ class TracIn(EarlyTrain):
 
     def _compute_influence_scores(self):
         """
-        Compute influence scores across all checkpoints and aggregate them.
+        Compute influence scores using only the first checkpoint.
 
         Returns:
-            Tensor of aggregated influence scores for each training example.
+            Tensor of influence scores for each training example.
         """
         device = self.args.device
         self.logger.info(f"Computing influence scores on device: {device}")
@@ -296,107 +293,29 @@ class TracIn(EarlyTrain):
         self._initialize_data_loader()
         self._initialize_test_loader()
 
-        # Calculate influence for each checkpoint
-        all_scores = []
-        for i in range(len(self.checkpoints)):
+        # Use only the first checkpoint (index 0)
+        if len(self.checkpoints) > 0:
             scores = self._compute_influence_single_checkpoint(
-                i, self.train_loader, self.test_loader, device
+                0, self.train_loader, self.test_loader, device
             )
-            all_scores.append(scores)
-
-        # Aggregate scores based on the chosen method
-        if self.aggregation_method == "sum":
-            final_scores = torch.stack(all_scores).sum(dim=0)
-        elif self.aggregation_method == "mean":
-            final_scores = torch.stack(all_scores).mean(dim=0)
-        elif self.aggregation_method == "max":
-            final_scores = torch.stack(all_scores).max(dim=0).values
+            return scores
         else:
-            raise ValueError(f"Unknown aggregation method: {self.aggregation_method}")
-
-        return final_scores
+            self.logger.error("No checkpoints available to compute influence scores")
+            return torch.zeros(len(self.dst_train), device=device)
 
     def _parallel_compute_influence(self, num_gpus=1):
         """
-        Compute influence scores in parallel using multiple GPUs.
+        Compute influence scores using only the first checkpoint.
+        When using initial epoch only, parallelization is not needed.
 
         Args:
-            num_gpus: Number of GPUs to use for computation.
+            num_gpus: Number of GPUs to use for computation (ignored).
 
         Returns:
-            Tensor of aggregated influence scores.
+            Tensor of influence scores.
         """
-        if num_gpus <= 1:
-            return self._compute_influence_scores()
-
-        # Initialize multiprocessing
-        try:
-            mp.set_start_method("spawn", force=True)
-        except RuntimeError:
-            pass
-
-        manager = mp.Manager()
-        return_dict = manager.dict()
-
-        # Split checkpoints among GPUs
-        checkpoint_indices = np.array_split(range(len(self.checkpoints)), num_gpus)
-
-        # Start processes
-        processes = []
-        for i, indices in enumerate(checkpoint_indices):
-            if len(indices) == 0:
-                continue
-
-            p = mp.Process(target=self._worker_process, args=(i, indices, return_dict))
-            processes.append(p)
-            p.start()
-
-        # Wait for processes to complete
-        for p in processes:
-            p.join()
-
-        # Collect and aggregate results
-        all_scores = []
-        for i in range(num_gpus):
-            if i in return_dict:
-                all_scores.extend(return_dict[i])
-
-        # Aggregate scores
-        if self.aggregation_method == "sum":
-            final_scores = torch.stack(all_scores).sum(dim=0)
-        elif self.aggregation_method == "mean":
-            final_scores = torch.stack(all_scores).mean(dim=0)
-        elif self.aggregation_method == "max":
-            final_scores = torch.stack(all_scores).max(dim=0).values
-        else:
-            raise ValueError(f"Unknown aggregation method: {self.aggregation_method}")
-
-        return final_scores
-
-    def _worker_process(self, gpu_id, checkpoint_indices, return_dict):
-        """
-        Worker process for parallel influence computation.
-
-        Args:
-            gpu_id: ID of the GPU to use.
-            checkpoint_indices: Indices of checkpoints to process.
-            return_dict: Shared dictionary to store results.
-        """
-        device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
-        self.logger.info(f"Worker {gpu_id} using device {device}")
-
-        # Initialize test loader
-        self._initialize_data_loader()
-
-        # Process assigned checkpoints
-        scores = []
-        for idx in checkpoint_indices:
-            score = self._compute_influence_single_checkpoint(
-                idx, self.train_loader, self.test_loader, device
-            )
-            scores.append(score.cpu())
-
-        return_dict[gpu_id] = scores
+        self.logger.info("Using only first checkpoint - falling back to single GPU mode")
+        return self._compute_influence_scores()
 
     @override
     def select(self, **kwargs):
