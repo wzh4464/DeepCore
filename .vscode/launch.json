@@ -15,6 +15,58 @@
                 "--num_exp", "1",
                 "--selection_epochs", "1",
             ]
-        }
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Flip MNIST TracIn",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "TracIn",
+                "--num_exp", "1",
+                "--num_eval", "1",
+                "--epochs", "1",
+                "--selection_epochs", "1",
+                "--data_path", "./data",
+                "--gpu", "0",
+                "--optimizer", "SGD",
+                "--lr", "0.1",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/test_tracin",
+                "--exp", "flip",
+                "--num_flip", "10",
+                "--workers", "1"
+            ]
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Flip MNIST OTI",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "OTI",
+                "--num_exp", "1",
+                "--num_eval", "1",
+                "--epochs", "1",
+                "--selection_epochs", "1",
+                "--data_path", "./data",
+                "--gpu", "1",
+                "--optimizer", "SGD",
+                "--lr", "0.1",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/test_oti",
+                "--exp", "flip",
+                "--num_flip", "10",
+                "--workers", "1",
+                "--num_gpus", "1"
+            ]
+        },
+
     ]
 }

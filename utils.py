@@ -126,7 +126,8 @@ def test(test_loader, network, criterion, epoch, args, rec):
     network.no_grad = True
 
     end = time.time()
-    for i, (inputs, targets) in enumerate(test_loader):
+    for i, j in enumerate(test_loader):
+        (inputs, targets) = j[0], j[1]
         targets = targets.to(args.device)
         inputs = inputs.to(args.device)
 

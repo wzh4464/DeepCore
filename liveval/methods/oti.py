@@ -384,8 +384,9 @@ class OTI(EarlyTrain):
             if grad is not None
         }
 
+    @override
     def _get_train_loader(self):
-        """Create and return training data loader."""
+        """Create and return training data loader with IndexedDataset support."""
         self.logger.info("Creating training data loader.")
 
         # 创建 IndexedDataset
@@ -394,7 +395,7 @@ class OTI(EarlyTrain):
             self.dst_train = IndexedDataset(self.dst_train, indices)
             self.logger.info("Wrapped dataset in IndexedDataset")
 
-        # Create DataLoader
+        # Create DataLoader with custom collate function
         train_loader = torch.utils.data.DataLoader(
             self.dst_train,
             batch_size=self.args.selection_batch,
@@ -403,11 +404,13 @@ class OTI(EarlyTrain):
             pin_memory=True,
             collate_fn=custom_collate,
         )
+        
         self.logger.info(
             "Training data loader created with batch size %d and %d workers.",
             self.args.selection_batch,
             self.args.workers,
         )
+        
         return train_loader, self.dst_train.indices
 
     def _init_multiprocessing(self):
@@ -955,11 +958,7 @@ class OTI(EarlyTrain):
         - self.train_indices is initialized with the indices of the training data.
         - self.train_iterator is initialized with the iterator for the training loader.
         """
-
-        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
-            self.logger.info("Train loader or iterator not found. Reinitializing.")
-            self.train_loader, self.train_indices = self._get_train_loader()
-            self.train_iterator = iter(self.train_loader)
+        super()._initialize_data_loader()
 
     @override
     def get_scores(self, **kwargs):

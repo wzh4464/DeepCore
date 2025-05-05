@@ -284,19 +284,20 @@ class AD_OTI(OTI):
         v_cumulative[batch_indices] += v_i_t1
 
     def _initialize_data_structures(self):
-        v_cumulative = torch.zeros(len(self.dst_train), device=self.args.device)
-        delta = self.delta
-        Q_ref = deque()
-        Q_theta = deque()
-        T = self.epochs * len(self.train_loader)
-        L_prev = None
+        """Initialize data structures for AD_OTI."""
+        self.v_cumulative = defaultdict(float)
+        self.Q_ref = deque(maxlen=self.delta_max)
+        self.Q_theta = deque(maxlen=self.delta_max)
 
-        self.logger.info("Starting main loop.")
-        self.logger.info(
-            f"Epochs: {self.epochs}, Batches: {len(self.train_loader)}, Total steps: {T}"
-        )
-
-        return v_cumulative, delta, Q_ref, Q_theta, T, L_prev
+    def _initialize_data_loader(self):
+        """
+        Initializes the data loader for training.
+        Make sure:
+        - self.train_loader is initialized with the training data.
+        - self.train_indices is initialized with the indices of the training data.
+        - self.train_iterator is initialized with the iterator for the training loader.
+        """
+        super()._initialize_data_loader()
 
     def _dict_to_tensor(self, param_dict):
         """

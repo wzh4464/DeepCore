@@ -28,6 +28,7 @@ from datetime import datetime
 from time import sleep
 from typing import Type
 import logging
+import pandas as pd
 
 
 def parse_args():
@@ -539,7 +540,10 @@ def initialize_dataset_and_model(args, checkpoint):
 
         method_class = SELECTION_METHODS.get(args.selection)
         if method_class is None:
-            raise ValueError(f"Selection method {args.selection} not found.")
+            available_methods = list(SELECTION_METHODS.keys())
+            raise ValueError(
+                f"Selection method {args.selection} not found. 可用的方法有: {available_methods}"
+            )
 
         # Initialize selection method with specific OTI options if selected
         if args.selection == "OTI":
@@ -1070,7 +1074,14 @@ def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
     # index, label, average_score to csv
     df = pd.DataFrame(average_score.detach().numpy())
     df["index"] = flipped_train_dataset.indices
-    df["label"] = flipped_train_dataset.dataset.targets
+
+    # 获取标签的正确方式
+    labels = []
+    for idx in flipped_train_dataset.indices:
+        _, label, _ = flipped_train_dataset.dataset[idx]
+        labels.append(label)
+    df["label"] = labels
+
     df.to_csv(f"{args.save_path}/average_score_{args.timestamp}.csv", index=False)
 
     # find num_flip samples with the lowest average_score, see how many of them are flipped

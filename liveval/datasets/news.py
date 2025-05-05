@@ -136,8 +136,8 @@ class NewsDataset(Dataset):
         self.targets = torch.from_numpy(targets)
 
     def __getitem__(self, index):
-        """Return data and target as float tensors."""
-        return (self.data[index].float(), self.targets[index].float())
+        """Return data, target, and index as float tensors."""
+        return self.data[index].float(), self.targets[index].float(), index
 
     def __len__(self):
         # is_train or not

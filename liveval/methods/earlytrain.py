@@ -224,6 +224,7 @@ class EarlyTrain(CoresetMethod):
         )
 
         for i, (inputs, targets, _) in enumerate(train_loader):
+            self.logger.info(f"Training batch {i} of {len(train_loader)}")
             inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
 
             # Forward propagation, compute loss, get predictions
@@ -261,7 +262,10 @@ class EarlyTrain(CoresetMethod):
                 if self.if_dst_pretrain
                 else self.dst_train
             )
-            list_of_train_idx = dst_train.indices.tolist()
+            if hasattr(dst_train, "indices"):
+                list_of_train_idx = dst_train.indices.tolist()
+            else:
+                list_of_train_idx = list(range(len(dst_train)))
             self.before_epoch()
             self.train(epoch, list_of_train_idx)
             if (
@@ -349,7 +353,7 @@ class EarlyTrain(CoresetMethod):
 
         print("\n=> Testing Epoch #%d" % epoch)
 
-        for batch_idx, (input, target) in enumerate(test_loader):
+        for batch_idx, (input, target, _) in enumerate(test_loader):
             output = self.model(input.to(self.args.device))
             loss = self.criterion(output, target.to(self.args.device)).sum()
 
@@ -504,6 +508,19 @@ class EarlyTrain(CoresetMethod):
             Any result from the run process.
         """
         self.logger.info("finish_run()")
+        return
+
+    def _initialize_data_loader(self):
+        """
+        Initializes the data loader for training.
+        Make sure:
+        - self.train_loader is initialized with the training data.
+        - self.train_indices is initialized with the indices of the training data.
+        - self.train_iterator is initialized with the iterator for the training loader.
+        """
+        if not hasattr(self, "train_loader") or not hasattr(self, "train_iterator"):
+            self.train_loader, self.train_indices = self._get_train_loader()
+            self.train_iterator = iter(self.train_loader)
 
     def select(self, **kwargs):
         """
@@ -515,3 +532,31 @@ class EarlyTrain(CoresetMethod):
         self.logger.info(f"select({kwargs})")
         self.before_run()
         return self.run()
+
+    def _get_train_loader(self):
+        """
+        Create and return training data loader.
+        
+        Returns:
+            tuple: (train_loader, train_indices)
+                - train_loader: DataLoader for training data
+                - train_indices: Indices of the training data
+        """
+        self.logger.info("Creating training data loader.")
+        
+        # Create DataLoader
+        train_loader = torch.utils.data.DataLoader(
+            self.dst_train,
+            batch_size=self.args.selection_batch,
+            shuffle=False,
+            num_workers=self.args.workers,
+            pin_memory=True,
+        )
+        
+        self.logger.info(
+            "Training data loader created with batch size %d and %d workers.",
+            self.args.selection_batch,
+            self.args.workers,
+        )
+        
+        return train_loader, np.arange(len(self.dst_train))

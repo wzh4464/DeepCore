@@ -75,7 +75,11 @@ class CorruptedDataset(FlippedDataset):
 
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
-        data, target = self.dataset[real_idx]
+        result = self.dataset[real_idx]
+        if len(result) == 3:
+            data, target, _ = result
+        else:
+            data, target = result
 
         # 如果样本在被模糊的索引中，则对其进行高斯模糊处理
         if real_idx in self.corrupted_indices_unpermuted:

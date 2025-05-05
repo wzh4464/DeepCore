@@ -22,11 +22,27 @@ class IndexedDataset(torch.utils.data.Dataset):
     def __init__(self, dataset, indices):
         self.dataset = dataset
         self.indices = indices
-        self.targets = dataset.targets
+        # 如果 dataset 是 IndexedDataset 实例，则获取其原始数据集
+        while isinstance(self.dataset, IndexedDataset):
+            self.dataset = self.dataset.dataset
+
+        # 尝试获取 targets 属性，如果不存在则创建一个
+        if not hasattr(self.dataset, "targets"):
+            # 从数据集中提取所有目标值
+            self.targets = torch.tensor(
+                [self.dataset[i][1] for i in range(len(self.dataset))]
+            )
+        else:
+            self.targets = self.dataset.targets
 
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
-        data, target = self.dataset[real_idx]
+        result = self.dataset[real_idx]
+        if len(result) == 3:
+            data, target, _ = result
+        else:
+            data, target = result
+
         return data, target, torch.tensor(real_idx, dtype=torch.long)
 
     def __len__(self):
@@ -110,7 +126,7 @@ class FlippedDataset(IndexedDataset):
         self.one_indices = [
             i
             for i, idx in enumerate(self.indices)
-            if self.dataset.targets[idx] == self.original_label
+            if self.targets[idx] == self.original_label
         ]
         self._perform_flipping()
 
@@ -156,7 +172,11 @@ class FlippedDataset(IndexedDataset):
 
     def __getitem__(self, idx):
         real_idx = self.indices[idx]
-        data, target = self.dataset[real_idx]
+        result = self.dataset[real_idx]
+        if len(result) == 3:
+            data, target, _ = result
+        else:
+            data, target = result
 
         # Return flipped label if index is in flipped set
         if real_idx in self.flipped_targets:
@@ -167,8 +187,9 @@ class FlippedDataset(IndexedDataset):
             except AttributeError:
                 target = torch.tensor(self.flipped_targets[real_idx])
 
-            # 或者确保使用特定类型：
-            # target = torch.tensor(self.flipped_targets[real_idx], dtype=torch.float32)
+        # 确保 target 是张量
+        if not isinstance(target, torch.Tensor):
+            target = torch.tensor(target)
 
         return data, target, torch.tensor(real_idx, dtype=torch.long)
 
