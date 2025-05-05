@@ -515,6 +515,9 @@ class OTI(EarlyTrain):
 
         # 计算最终的 scores
         final_scores = torch.mean(torch.stack(scores_per_epoch), dim=0)
+
+        final_scores[final_scores == 0.0] = float('nan')
+        
         return final_scores
 
     def _count_detected_flipped_samples(self, scores):

@@ -89,7 +89,7 @@ class TracIn(EarlyTrain):
             if hasattr(dst_train, "get_flipped_indices")
             else []
         )
-        
+
         # 添加对特定子集计算的逻辑，与OTI保持一致
         self.scores_indices = (
             dst_train.get_flipped_selection_from()
@@ -101,7 +101,7 @@ class TracIn(EarlyTrain):
             self.logger.info(
                 f"[TracIn] Tracking {len(self.flipped_indices)} flipped samples"
             )
-        
+
         # 添加对scores_indices的日志记录
         if self.scores_indices:
             self.logger.info(
@@ -266,12 +266,12 @@ class TracIn(EarlyTrain):
 
             for i in range(len(inputs)):
                 true_idx_i = indices[i].item()
-                
+
                 # 添加对特定子集计算的逻辑，与OTI保持一致
                 # 如果样本不在scores_indices中则跳过
                 if self.scores_indices and true_idx_i not in self.scores_indices:
                     continue
-                
+
                 train_grad = self._compute_gradients(
                     self.model, inputs[i : i + 1], targets[i : i + 1], device
                 )
@@ -468,16 +468,18 @@ class TracIn(EarlyTrain):
 
         # Compute and return influence scores
         scores = self._compute_influence_scores().cpu()
-        
+
         # 添加对特定子集返回的逻辑，与OTI保持一致
         if self.scores_indices:
-            self.logger.info(f"[TracIn] Returning scores for {len(self.scores_indices)} samples only")
+            self.logger.info(
+                f"[TracIn] Returning scores for {len(self.scores_indices)} samples only"
+            )
             # 创建一个全零张量，只填充特定子集的得分
             full_scores = torch.zeros(len(self.dst_train))
             for idx in self.scores_indices:
                 full_scores[idx] = scores[idx]
             return full_scores.numpy()
-        
+
         return scores.numpy()
 
 
