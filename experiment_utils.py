@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:35:29 am
+# Last Modified: Friday, 9th May 2025 3:53:33 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -403,3 +403,21 @@ def train_and_evaluate_model(
         subset,
         selection_args,
     )
+
+def find_found_flipped_indices(score, flipped_indices, num_to_select=None):
+    """
+    根据分数和反转点索引，返回被找到的反转点索引列表。
+    score: tensor 或 numpy array，所有样本的分数。
+    flipped_indices: list 或 array，反转点的索引。
+    num_to_select: 选取最低分数的样本数，默认与flipped_indices数量一致。
+    返回：被找到的反转点索引列表。
+    """
+    if isinstance(score, torch.Tensor):
+        score = score.detach().cpu().numpy()
+    if num_to_select is None:
+        num_to_select = len(flipped_indices)
+    # 取最低分数的样本索引
+    lowest_score_indices = np.argpartition(score, num_to_select)[:num_to_select]
+    # 找到这些最低分数中哪些是反转点
+    found_flipped_indices = [i for i in lowest_score_indices if i in flipped_indices]
+    return found_flipped_indices

@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:35:43 am
+# Last Modified: Friday, 9th May 2025 4:50:24 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -558,13 +558,18 @@ def custom_collate(batch):
         return data, labels, indices
 
 def count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score):
+    # 类型统一：全部转为 Python int
+    flipped_indices_set = set(int(idx) for idx in flipped_indices)
+    lowest_indices = average_score.argsort()[: args.num_flip]
+    if hasattr(lowest_indices, 'cpu'):
+        lowest_indices = lowest_indices.cpu().numpy()
+    lowest_indices = [int(idx) for idx in lowest_indices]
     num_flipped_in_lowest_scores = sum(
-        idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
+        idx in flipped_indices_set for idx in lowest_indices
     )
     logger.info(
         f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
     )
-
     return num_flipped_in_lowest_scores
 
 @log_exception()

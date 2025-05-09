@@ -42,9 +42,14 @@ class CoresetMethod(object):
             raise ValueError("Illegal Coreset Size.")
 
         self.dst_train = dst_train  # Save the training dataset
-        self.num_classes = len(
-            dst_train.classes
-        )  # Get the number of classes in the training dataset
+        # 兼容 Subset 类型，递归查找 .classes 属性
+        base = dst_train
+        while hasattr(base, 'dataset'):
+            base = base.dataset
+        if hasattr(base, 'classes'):
+            self.num_classes = len(base.classes)
+        else:
+            raise AttributeError('Training dataset (or its base) must have a .classes attribute')
         self.fraction = fraction  # Save the fraction of the dataset to be selected
         self.random_seed = random_seed  # Save the seed value for random selection (for reproducibility)
         self.index = []  # List to store the indices of the selected samples
