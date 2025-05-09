@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:35:52 am
+# Last Modified: Friday, 9th May 2025 6:00:20 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -193,40 +193,33 @@ class EarlyTrain(CoresetMethod):
     def train(self, epoch, list_of_train_idx, **kwargs):
         """
         Train the model for one epoch.
-
-        Args:
-            epoch (int): Current epoch number.
-            list_of_train_idx (list): List of indices for training samples.
-
-        Returns:
-            The result of finish_train method.
         """
         self.logger.debug(f"train({epoch}, {list_of_train_idx}, {kwargs})")
         self.before_train()
         self.model.train()
 
         print("\n=> Training Epoch #%d" % epoch)
-        trainset_permutation_inds = np.random.permutation(list_of_train_idx)
-        batch_sampler = torch.utils.data.BatchSampler(
-            trainset_permutation_inds,
-            batch_size=self.args.selection_batch,
-            drop_last=False,
-        )
-        trainset_permutation_inds = list(batch_sampler)
+
+        # 选用原始数据集和 SubsetRandomSampler，避免索引错位
+        if self.if_dst_pretrain:
+            dst_data = self.dst_pretrain_dict["dst_train"]
+        else:
+            dst_data = self.dst_train
+        # 如果是 Subset，取其原始数据集
+        if hasattr(dst_data, 'indices') and hasattr(dst_data, 'dataset'):
+            base_dataset = dst_data.dataset
+        else:
+            base_dataset = dst_data
 
         train_loader = torch.utils.data.DataLoader(
-            (
-                self.dst_pretrain_dict["dst_train"]
-                if self.if_dst_pretrain
-                else self.dst_train
-            ),
-            shuffle=False,
-            batch_sampler=batch_sampler,
+            base_dataset,
+            batch_size=self.args.selection_batch,
+            sampler=torch.utils.data.SubsetRandomSampler(list_of_train_idx),
             num_workers=self.args.workers,
             pin_memory=True,
         )
 
-        for i, (inputs, targets, _) in enumerate(train_loader):
+        for i, (inputs, targets, true_indices) in enumerate(train_loader):
             self.logger.info(f"Training batch {i} of {len(train_loader)}")
             inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
 
@@ -235,7 +228,8 @@ class EarlyTrain(CoresetMethod):
             outputs = self.model(inputs)
             loss = self.criterion(outputs, targets)
 
-            self.after_loss(outputs, loss, targets, trainset_permutation_inds[i], epoch)
+            # 这里 trainset_permutation_inds[i] 可能不再适用，直接传 true_indices
+            self.after_loss(outputs, loss, targets, true_indices, epoch)
 
             # Update loss, backward propagate, update optimizer
             loss = loss.mean()
@@ -569,3 +563,49 @@ class EarlyTrain(CoresetMethod):
         )
         
         return train_loader, np.arange(len(self.dst_train))
+
+    @log_exception()
+    def train_for_epochs(self, num_epochs, train_indices, test_loader=None):
+        """
+        训练模型指定轮数，并在每轮后可选地进行测试。
+
+        参数：
+            num_epochs (int): 训练的轮数。
+            train_indices (list): 训练样本的索引列表。
+            test_loader (DataLoader, optional): 测试数据加载器。默认为 None。
+        返回：
+            float: 如果提供 test_loader，返回训练后最终的测试准确率。
+        """
+        self.logger.info(f"Training for {num_epochs} epochs with {len(train_indices)} samples")
+
+        # 确保模型已初始化
+        if not hasattr(self, 'model') or self.model is None:
+            self.before_run()
+
+        test_acc = None
+
+        for epoch in range(num_epochs):
+            self.before_epoch()
+            self.train(epoch, train_indices)
+
+            # 如有需要，进行测试
+            if test_loader is not None:
+                _ = self.test(epoch)  # 保持与原有 test 方法兼容
+            self.after_epoch()
+
+        # 最终评估
+        if test_loader is not None:
+            self.model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for inputs, targets, _ in test_loader:
+                    inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
+                    outputs = self.model(inputs)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+            test_acc = correct / total if total > 0 else 0.0
+            self.last_test_acc = test_acc
+            self.logger.info(f"Final test accuracy: {test_acc:.4f}")
+        return test_acc

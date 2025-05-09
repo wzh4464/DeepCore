@@ -76,7 +76,7 @@ def run(args, checkpoint, start_exp, start_epoch):
 
         # 训练
 
-        test_acc = retrain_method.train(args.selection_epochs, remaining_indices, test_loader)
+        test_acc = retrain_method.train_for_epochs(args.selection_epochs, remaining_indices, test_loader)
         logger.info(f"Test accuracy: {test_acc:.4f}")
 
         # 保存loss/accuracy
