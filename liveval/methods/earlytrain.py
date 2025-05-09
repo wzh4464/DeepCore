@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 6:00:20 pm
+# Last Modified: Friday, 9th May 2025 9:22:22 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -368,6 +368,7 @@ class EarlyTrain(CoresetMethod):
                 self.logger.debug(f"Correct: {correct}, Total: {total}")
 
         self.model.no_grad = False
+        self.last_test_acc = correct / total if total > 0 else 0.0
 
     def num_classes_mismatch(self):
         """
