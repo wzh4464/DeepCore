@@ -17,6 +17,10 @@ def run(args, checkpoint, start_exp, start_epoch):
             permuted_indices,
             flipped_selection_from,
         ) = initialize_flip_exp(args, args.seed + exp)
+
+        # save flipped_selection_from
+        pd.DataFrame(flipped_selection_from).to_csv(f"{args.save_path}/flipped_selection_from_{args.timestamp}_{exp}.csv", index=False)
+
         method_class = args.selection if isinstance(args.selection, type) else None
         from liveval.methods.selection_methods import SELECTION_METHODS
         method_class = SELECTION_METHODS.get(args.selection)
