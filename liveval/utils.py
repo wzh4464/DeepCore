@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:18:25 am
+# Last Modified: Friday, 9th May 2025 9:57:58 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -563,3 +563,138 @@ def count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)
     )
 
     return num_flipped_in_lowest_scores
+
+def load_checkpoint(args):
+    """Load checkpoint if resume is specified."""
+    logger = logging.getLogger(__name__)
+    try:
+        logger.info(f"Loading checkpoint '{args.resume}'")
+        checkpoint = torch.load(args.resume, map_location=args.device)
+        assert {
+            "exp",
+            "epoch",
+            "state_dict",
+            "opt_dict",
+            "best_acc1",
+            "rec",
+            "subset",
+            "sel_args",
+        } <= set(checkpoint.keys())
+        assert "indices" in checkpoint["subset"].keys()
+        start_exp = checkpoint["exp"]
+        start_epoch = checkpoint["epoch"]
+        logger.info(
+            f"Checkpoint loaded. Resuming from experiment {start_exp}, epoch {start_epoch}"
+        )
+    except AssertionError:
+        try:
+            assert {"exp", "subset", "sel_args"} <= set(checkpoint.keys())
+            assert "indices" in checkpoint["subset"].keys()
+            logger.info(
+                "The checkpoint only contains the subset, training will start from the beginning"
+            )
+            start_exp = checkpoint["exp"]
+            start_epoch = 0
+        except AssertionError:
+            logger.warning(
+                "Failed to load the checkpoint, an empty one will be created"
+            )
+            checkpoint = {}
+            start_exp = 0
+            start_epoch = 0
+    return checkpoint, start_exp, start_epoch
+
+
+def save_best_checkpoint(
+    args,
+    exp,
+    epoch,
+    network,
+    optimizer,
+    best_prec1,
+    prec1,
+    rec,
+    checkpoint_name,
+    subset,
+    selection_args,
+    model,
+):
+    """Save the checkpoint if the current model has the best accuracy."""
+    is_best = prec1 > best_prec1
+    if is_best:
+        best_prec1 = prec1
+        if args.save_path != "":
+            rec = record_ckpt(rec, epoch)
+            save_checkpoint(
+                {
+                    "exp": exp,
+                    "epoch": epoch + 1,
+                    "state_dict": network.state_dict(),
+                    "opt_dict": optimizer.state_dict(),
+                    "best_acc1": best_prec1,
+                    "rec": rec,
+                    "subset": subset,
+                    "sel_args": selection_args,
+                },
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "unknown.ckpt",
+                ),
+                epoch=epoch,
+                prec=best_prec1,
+            )
+    return best_prec1
+
+
+def finalize_checkpoint(
+    args,
+    exp,
+    best_prec1,
+    checkpoint_name,
+    model,
+    network,
+    optimizer,
+    rec,
+    subset,
+    selection_args,
+):
+    """Finalize the checkpoint: rename or save the final checkpoint."""
+    if args.save_path != "":
+        try:
+            os.rename(
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "unknown.ckpt",
+                ),
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "%f.ckpt" % best_prec1,
+                ),
+            )
+        except Exception:
+            save_checkpoint(
+                {
+                    "exp": exp,
+                    "epoch": args.epochs,
+                    "state_dict": network.state_dict(),
+                    "opt_dict": optimizer.state_dict(),
+                    "best_acc1": best_prec1,
+                    "rec": rec,
+                    "subset": subset,
+                    "sel_args": selection_args,
+                },
+                os.path.join(
+                    args.save_path,
+                    checkpoint_name
+                    + ("" if model == args.model else f"{model}_")
+                    + "%f.ckpt" % best_prec1,
+                ),
+                epoch=args.epochs - 1,
+                prec=best_prec1,
+            )
