@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:15 pm
+# Last Modified: Friday, 9th May 2025 9:22:19 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -23,7 +23,7 @@ from liveval.datasets.corrupted_dataset import CorruptedDataset
 from liveval.methods.selection_methods import SELECTION_METHODS
 from liveval.methods.coresetmethod import CoresetMethod
 from torchvision import transforms
-from utils import *
+from liveval.utils import *
 from datetime import datetime
 from time import sleep
 from typing import Type
@@ -461,10 +461,10 @@ def setup_experiment(args):
     if args.selection_batch is None:
         args.selection_batch = args.batch
     if args.save_path != "" and not os.path.exists(args.save_path):
-        os.mkdir(args.save_path)
+        os.makedirs(args.save_path, exist_ok=True)
         logger.info(f"Created directory: {args.save_path}")
     if not os.path.exists(args.data_path):
-        os.mkdir(args.data_path)
+        os.makedirs(args.data_path, exist_ok=True)
         logger.info(f"Created directory: {args.data_path}")
 
     if args.resume != "":
@@ -1086,17 +1086,6 @@ def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
 
     # find num_flip samples with the lowest average_score, see how many of them are flipped
     count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)
-
-
-def count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score):
-    num_flipped_in_lowest_scores = sum(
-        idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
-    )
-    logger.info(
-        f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
-    )
-
-    return num_flipped_in_lowest_scores
 
 
 def _calculate_average_score(scores, logger, **kwargs):

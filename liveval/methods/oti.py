@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:31 pm
+# Last Modified: Friday, 9th May 2025 9:22:42 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -36,7 +36,7 @@ from liveval.datasets.flipped_dataset import IndexedDataset
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from utils import ScoreTracker, custom_collate
+from liveval.utils import ScoreTracker, custom_collate, count_flipped_in_lowest_scores
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -503,7 +503,7 @@ class OTI(EarlyTrain):
             scores_per_epoch.append(scores)
 
             # 统计当前 epoch 中检测到的 flipped samples
-            num_detected = self.count_flipped_in_lowest_scores(
+            num_detected = count_flipped_in_lowest_scores(
                 self.logger, self.args, self.flipped_indices, scores
             )
             self.detected_flipped_per_epoch.append(
@@ -607,17 +607,6 @@ class OTI(EarlyTrain):
             #         torch.zeros(len(train_indices))
             #     )
             # return torch.zeros(len(train_indices))
-
-    def count_flipped_in_lowest_scores(
-        self, logger, args, flipped_indices, average_score
-    ):
-        num_flipped_in_lowest_scores = sum(
-            idx in flipped_indices for idx in average_score.argsort()[: args.num_flip]
-        )
-        logger.info(
-            f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
-        )
-        return num_flipped_in_lowest_scores
 
     def _setup_optimizer_scheduler(self, use_learning_rate: bool):
         if use_learning_rate:
