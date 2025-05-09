@@ -53,7 +53,7 @@
                 "--selection", "OTI",
                 "--num_exp", "1",
                 "--num_eval", "1",
-                "--epochs", "1",
+                "--epochs", "5",
                 "--selection_epochs", "1",
                 "--data_path", "./data",
                 "--gpu", "1",

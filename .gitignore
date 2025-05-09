@@ -1,0 +1,19 @@
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 数据集原始文件
+data/*
+
+# egg-info 元数据
+*.egg-info/
+*.egg-info/*
+
+# 日志文件
+logs/
+
+# 训练/评估结果、模型参数、分数等
+results/
+
+# 忽略 .gitignore 自身（可选，通常不需要）
+# .gitignore
