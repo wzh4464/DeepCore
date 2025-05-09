@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:40 pm
+# Last Modified: Friday, 9th May 2025 10:13:06 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -89,7 +89,7 @@ class LOO(InfluenceMethod):
         )
         local_losses = np.zeros(len(indices))
         self.logger.info(
-            f"Process {torch.multiprocessing.current_process().name} using GPU {device}"
+            f"Process {torch.multiprocessing.current_process().name} using device {device}"
         )
         for i, idx in enumerate(indices):
             subset_indices = list(range(len(self.dst_train)))
@@ -99,7 +99,7 @@ class LOO(InfluenceMethod):
             loss = self.evaluate_model(model, device_id)
             local_losses[i] = loss
             self.logger.info(
-                f"GPU {device_id}: Processed sample {idx+1}/{len(self.dst_train)}, Loss: {loss} for {i}th sample"
+                f"Processed sample {idx+1}/{len(self.dst_train)}, Loss: {loss} for {i}th sample"
             )
         return local_losses
 

@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:50 pm
+# Last Modified: Friday, 9th May 2025 10:13:50 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -549,7 +549,6 @@ class AD_OTI(OTI):
             self.logger.info(
                 "CPU memory usage: %.2f MB, GPU not available.", cpu_memory
             )
-
         return cpu_memory, gpu_memory
 
     def _train_step(

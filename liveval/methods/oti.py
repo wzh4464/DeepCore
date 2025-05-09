@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:22:42 am
+# Last Modified: Friday, 9th May 2025 10:24:56 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -330,7 +330,7 @@ class OTI(EarlyTrain):
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
         """
-        Calculate scores by training in real-time and comparing parameters with best_params.
+        计算分数，支持单卡和多卡。
         """
         try:
             if self.best_params is None:
@@ -348,7 +348,7 @@ class OTI(EarlyTrain):
         )
 
         if self.num_gpus <= 1:
-            self.logger.info("[OTI] Using single GPU for score calculation")
+            self.logger.info("Using single GPU for score calculation")
             device_id = 0 if self.args.gpu is None else self.args.gpu[0]
             return self._single_gpu_calculate_scores(
                 self.best_params,
@@ -359,7 +359,7 @@ class OTI(EarlyTrain):
                 # use_sliding_window
             )
         else:
-            self.logger.info("[OTI] Using multiple GPUs for score calculation")
+            self.logger.info("Using multiple GPUs for score calculation")
             return self._multi_gpu_calculate_scores(
                 self.best_params,
                 init_params,
@@ -550,24 +550,25 @@ class OTI(EarlyTrain):
         train_indices: Optional[np.ndarray] = None,
     ) -> torch.Tensor:
         try:
+            # 只保留worker编号信息
             worker_name = (
-                f"Worker-{worker_id}" if worker_id is not None else f"GPU-{device_id}"
+                "OTI"
             )
             device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
 
             self._setup_optimizer_scheduler(use_learning_rate)
-            self.logger.info(f"[{worker_name}] Initialized optimizer and scheduler")
+            self.logger.info(f"Initialized optimizer and scheduler")
 
             if train_loader is None:
                 train_loader, train_indices = self._get_train_loader()
-                self.logger.info(f"[{worker_name}] Created training data loader")
+                self.logger.info(f"Created training data loader")
                 self.train_iterator = iter(train_loader)
 
             scores = torch.zeros(len(train_indices), dtype=torch.float32, device="cpu")
 
             for epoch in epochs_to_process:
                 epoch_lr = self._update_learning_rate(use_learning_rate, epoch)
-                self.logger.info(f"[{worker_name}] Epoch {epoch} using lr: {epoch_lr}")
+                self.logger.info(f"Epoch {epoch} using lr: {epoch_lr}")
 
                 for batch_ind, (inputs, targets, true_idx) in enumerate(
                     self.train_iterator
@@ -593,20 +594,10 @@ class OTI(EarlyTrain):
                 return_dict[worker_id if worker_id is not None else device_id] = (
                     scores.detach().cpu()
                 )
-
-            # scores = scores[self.scores_indices] if self.scores_indices else scores
-
             return scores
-
         except Exception as e:
-            self.logger.error(f"[{worker_name}] Error: {str(e)}")
-            self.logger.error(f"[{worker_name}] Traceback: {traceback.format_exc()}")
-            raise e
-            # if return_dict is not None:
-            #     return_dict[worker_id if worker_id is not None else device_id] = (
-            #         torch.zeros(len(train_indices))
-            #     )
-            # return torch.zeros(len(train_indices))
+            self.logger.error(f"Error in _calculate_scores_on_device: {e}")
+            raise
 
     def _setup_optimizer_scheduler(self, use_learning_rate: bool):
         if use_learning_rate:

@@ -3,7 +3,7 @@
 # Created Date: Sunday, May 4th 2025
 # Author: Claude
 # -----
-# Last Modified: Sunday, 4th May 2025 2:00:00 pm
+# Last Modified: Friday, 9th May 2025 10:13:37 am
 # -----
 # HISTORY:
 # Date      		By   	Comments
@@ -99,13 +99,13 @@ class TracIn(EarlyTrain):
 
         if self.flipped_indices:
             self.logger.info(
-                f"[TracIn] Tracking {len(self.flipped_indices)} flipped samples"
+                f"Tracking {len(self.flipped_indices)} flipped samples"
             )
 
         # 添加对scores_indices的日志记录
         if self.scores_indices:
             self.logger.info(
-                f"[TracIn] Computing scores for {len(self.scores_indices)} samples"
+                f"Computing scores for {len(self.scores_indices)} samples"
             )
 
     @override
@@ -352,7 +352,7 @@ class TracIn(EarlyTrain):
         if self.flipped_indices:
             detected_flipped = set(selected_indices) & set(self.flipped_indices)
             self.logger.info(
-                f"[TracIn] Detected {len(detected_flipped)} out of {len(self.flipped_indices)} flipped samples"
+                f"Detected {len(detected_flipped)} out of {len(self.flipped_indices)} flipped samples"
             )
 
         # self.scores_indices
@@ -391,7 +391,7 @@ class TracIn(EarlyTrain):
         # 添加对特定子集返回的逻辑，与OTI保持一致
         if self.scores_indices:
             self.logger.info(
-                f"[TracIn] Returning scores for {len(self.scores_indices)} samples only"
+                f"Returning scores for {len(self.scores_indices)} samples only"
             )
             # 创建一个全零张量，只填充特定子集的得分
             full_scores = torch.zeros(len(self.dst_train))

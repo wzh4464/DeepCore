@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:02:20 am
+# Last Modified: Friday, 9th May 2025 10:19:57 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -40,6 +40,7 @@ from experiment_utils import (
     train_and_evaluate_model
 )
 from logging_utils import setup_logging, get_logger
+import sys
 
 def parse_args():
     """
@@ -616,15 +617,15 @@ def main():
     logger = setup_logging(log_level=args.log_level)
     logger.info(f"Parsed arguments: {args}")
 
-    # 检查并打印物理GPU编号和名称
-    if torch.cuda.is_available():
-        num_gpus = torch.cuda.device_count()
-        logger.info(f"检测到 {num_gpus} 块物理GPU：")
-        for i in range(num_gpus):
-            gpu_name = torch.cuda.get_device_name(i)
-            logger.info(f"物理GPU编号: {i}, 名称: {gpu_name}")
-    else:
-        logger.info("未检测到可用GPU，使用CPU模式。")
+    # 记录物理编号用于日志
+    physical_gpu_ids = args.gpu.copy() if args.gpu is not None else None
+    if args.gpu is not None:
+        visible = ",".join(str(i) for i in args.gpu)
+        if os.environ.get("CUDA_VISIBLE_DEVICES", None) != visible:
+            os.environ["CUDA_VISIBLE_DEVICES"] = visible
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        # 进程重启后，PyTorch只看到指定卡，args.gpu要重映射为逻辑编号
+        args.gpu = list(range(torch.cuda.device_count()))
 
     checkpoint, start_exp, start_epoch = setup_experiment(args)
     logger.info(
