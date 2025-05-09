@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:35:17 am
+# Last Modified: Friday, 9th May 2025 10:48:48 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -620,33 +620,62 @@ def main():
         None
     """
     import torch
+    import random
+    import numpy as np
+    import torch.backends.cudnn as cudnn
     args = parse_args()
-    # 使用统一日志接口
+    # 日志初始化
     logger = setup_logging(log_level=args.log_level)
     logger.info(f"Parsed arguments: {args}")
 
-    # 记录物理编号用于日志
-    physical_gpu_ids = args.gpu.copy() if args.gpu is not None else None
-    if args.gpu is not None:
-        visible = ",".join(str(i) for i in args.gpu)
-        if os.environ.get("CUDA_VISIBLE_DEVICES", None) != visible:
-            os.environ["CUDA_VISIBLE_DEVICES"] = visible
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        # 进程重启后，PyTorch只看到指定卡，args.gpu要重映射为逻辑编号
-        args.gpu = list(range(torch.cuda.device_count()))
+    # 打印所有物理GPU及名称
+    if torch.cuda.is_available():
+        gpu_count = torch.cuda.device_count()
+        gpu_info = [f"GPU-{i}: {torch.cuda.get_device_name(i)}" for i in range(gpu_count)]
+        logger.info(f"可用物理GPU列表: {gpu_info}")
+    else:
+        logger.info("未检测到可用GPU，使用CPU模式")
 
+    # 强制物理GPU设定
+    if args.gpu is not None and torch.cuda.is_available():
+        torch.cuda.set_device(args.gpu[0])
+        logger.info(f"当前进程已强制使用物理GPU: {args.gpu[0]} ({torch.cuda.get_device_name(args.gpu[0])})")
+    else:
+        logger.info("未指定GPU或无GPU可用，使用CPU")
+
+    # 用参数初始化所有随机种子
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+    cudnn.deterministic = True
+    cudnn.benchmark = False
+    logger.info(f"所有随机种子已初始化为: {args.seed}")
+
+    # 统一实验入口分发
     checkpoint, start_exp, start_epoch = setup_experiment(args)
-    logger.info(
-        f"Experiment setup complete. Starting from experiment {start_exp}, epoch {start_epoch}"
-    )
+    logger.info(f"Experiment setup complete. Starting from experiment {start_exp}, epoch {start_epoch}")
 
-    run_experiment(args, checkpoint, start_exp, start_epoch)
+    # 根据实验类型自动分发
+    if args.exp == "train_and_eval":
+        from experiment import train_and_eval
+        train_and_eval.run(args, checkpoint, start_exp, start_epoch)
+    elif args.exp == "flip":
+        from experiment import flip
+        flip.run(args, checkpoint, start_exp, start_epoch)
+    elif args.exp == "corrupt":
+        from experiment import corrupt
+        corrupt.run(args, checkpoint, start_exp, start_epoch)
+    else:
+        logger.error(f"未知实验类型: {args.exp}")
+        raise ValueError(f"未知实验类型: {args.exp}")
 
     logger.info("Main function completed")
 
 
 if __name__ == "__main__":
-    # set spawn method for multiprocessing
     multiprocessing.set_start_method("spawn", force=True)
     try:
         main()

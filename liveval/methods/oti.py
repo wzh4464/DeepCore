@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:36:07 am
+# Last Modified: Friday, 9th May 2025 12:40:29 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -696,7 +696,8 @@ class OTI(EarlyTrain):
             self.logger.info(
                 f"[{worker_name}] Epoch {epoch} Batch {batch_idx}: Loss = {loss.item():.4f}, "
                 f"Samples scored: {len(scores)}, "
-                f"Mean score: {scores.mean().item():.4f}"
+                # remove nan
+                f"Mean score: {scores[~torch.isnan(scores)].mean().item():.4f}, " 
             )
         return scores, batch_indices_tensor
 
@@ -729,6 +730,7 @@ class OTI(EarlyTrain):
 
             # Skip if sample is not in scores_indices
             if self.scores_indices and true_idx_i not in self.scores_indices:
+                pseudo_distances[i] = np.nan
                 continue
 
             # Clear previous gradients

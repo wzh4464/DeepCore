@@ -51,12 +51,13 @@
                 "--dataset", "MNIST",
                 "--model", "LeNet",
                 "--selection", "OTI",
+                "--exp", "flip",
                 "--num_exp", "1",
                 "--num_eval", "1",
                 "--epochs", "5",
                 "--selection_epochs", "1",
                 "--data_path", "./data",
-                "--gpu", "1",
+                "--gpu", "0",
                 "--optimizer", "SGD",
                 "--lr", "0.1",
                 "--scheduler", "CosineAnnealingLR",
@@ -64,7 +65,8 @@
                 "--exp", "flip",
                 "--num_flip", "10",
                 "--workers", "1",
-                "--num_gpus", "1"
+                "--num_gpus", "1",
+                "--seed", "42"
             ]
         },
 

@@ -15,5 +15,8 @@ logs/
 # 训练/评估结果、模型参数、分数等
 results/
 
+# 缓存文件
+cache/
+
 # 忽略 .gitignore 自身（可选，通常不需要）
 # .gitignore
