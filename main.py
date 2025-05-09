@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:42:40 am
+# Last Modified: Friday, 9th May 2025 9:55:32 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -37,8 +37,8 @@ from experiment_utils import (
     initialize_dataset_properties,
     initialize_flip_exp,
     initialize_network,
+    train_and_evaluate_model
 )
-
 
 def parse_args():
     """
@@ -451,177 +451,6 @@ def print_experiment_info(args, exp, checkpoint_name):
     logger.info(
         f"exp:{args.exp}, dataset: {args.dataset}, model: {args.model}, selection: {args.selection}, num_ex: {args.num_exp}, epochs: {args.epochs}, fraction: {args.fraction}, seed: {args.seed}, lr: {args.lr}, save_path: {args.save_path}, resume: {args.resume}, device: {args.device}, {'checkpoint_name: {checkpoint_name}' if args.save_path != '' else ''}"
     )
-
-
-def train_and_evaluate_model(
-    args,
-    exp,
-    start_epoch,
-    train_loader,
-    test_loader,
-    subset,
-    selection_args,
-    checkpoint_name,
-    model,
-    checkpoint,
-):
-    """Train and evaluate a single model."""
-    network, criterion, optimizer, scheduler = initialize_network(
-        args, model, train_loader, checkpoint, start_epoch
-    )
-    rec = checkpoint["rec"] if "rec" in checkpoint.keys() else init_recorder()
-    best_prec1 = checkpoint["best_acc1"] if "best_acc1" in checkpoint.keys() else 0.0
-
-    if args.save_path != "" and args.resume == "":
-        save_checkpoint(
-            {"exp": exp, "subset": subset, "sel_args": selection_args},
-            os.path.join(
-                args.save_path,
-                checkpoint_name
-                + ("" if model == args.model else f"{model}_")
-                + "unknown.ckpt",
-            ),
-            0,
-            0.0,
-        )
-
-    for epoch in range(start_epoch, args.epochs):
-        train(
-            train_loader,
-            network,
-            criterion,
-            optimizer,
-            scheduler,
-            epoch,
-            args,
-            rec,
-            if_weighted="weights" in subset,
-        )
-
-        if args.test_interval > 0 and (epoch + 1) % args.test_interval == 0:
-            prec1 = test(test_loader, network, criterion, epoch, args, rec)
-            best_prec1 = save_best_checkpoint(
-                args,
-                exp,
-                epoch,
-                network,
-                optimizer,
-                best_prec1,
-                prec1,
-                rec,
-                checkpoint_name,
-                subset,
-                selection_args,
-                model,
-            )
-
-    finalize_checkpoint(
-        args,
-        exp,
-        best_prec1,
-        checkpoint_name,
-        model,
-        network,
-        optimizer,
-        rec,
-        subset,
-        selection_args,
-    )
-
-
-def save_best_checkpoint(
-    args,
-    exp,
-    epoch,
-    network,
-    optimizer,
-    best_prec1,
-    prec1,
-    rec,
-    checkpoint_name,
-    subset,
-    selection_args,
-    model,
-):
-    """Save the checkpoint if the current model has the best accuracy."""
-    is_best = prec1 > best_prec1
-    if is_best:
-        best_prec1 = prec1
-        if args.save_path != "":
-            rec = record_ckpt(rec, epoch)
-            save_checkpoint(
-                {
-                    "exp": exp,
-                    "epoch": epoch + 1,
-                    "state_dict": network.state_dict(),
-                    "opt_dict": optimizer.state_dict(),
-                    "best_acc1": best_prec1,
-                    "rec": rec,
-                    "subset": subset,
-                    "sel_args": selection_args,
-                },
-                os.path.join(
-                    args.save_path,
-                    checkpoint_name
-                    + ("" if model == args.model else f"{model}_")
-                    + "unknown.ckpt",
-                ),
-                epoch=epoch,
-                prec=best_prec1,
-            )
-    return best_prec1
-
-
-def finalize_checkpoint(
-    args,
-    exp,
-    best_prec1,
-    checkpoint_name,
-    model,
-    network,
-    optimizer,
-    rec,
-    subset,
-    selection_args,
-):
-    """Finalize the checkpoint: rename or save the final checkpoint."""
-    if args.save_path != "":
-        try:
-            os.rename(
-                os.path.join(
-                    args.save_path,
-                    checkpoint_name
-                    + ("" if model == args.model else f"{model}_")
-                    + "unknown.ckpt",
-                ),
-                os.path.join(
-                    args.save_path,
-                    checkpoint_name
-                    + ("" if model == args.model else f"{model}_")
-                    + "%f.ckpt" % best_prec1,
-                ),
-            )
-        except Exception:
-            save_checkpoint(
-                {
-                    "exp": exp,
-                    "epoch": args.epochs,
-                    "state_dict": network.state_dict(),
-                    "opt_dict": optimizer.state_dict(),
-                    "best_acc1": best_prec1,
-                    "rec": rec,
-                    "subset": subset,
-                    "sel_args": selection_args,
-                },
-                os.path.join(
-                    args.save_path,
-                    checkpoint_name
-                    + ("" if model == args.model else f"{model}_")
-                    + "%f.ckpt" % best_prec1,
-                ),
-                epoch=args.epochs - 1,
-                prec=best_prec1,
-            )
 
 
 def run_experiment(args, checkpoint, start_exp, start_epoch):
