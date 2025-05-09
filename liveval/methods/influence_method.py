@@ -101,7 +101,9 @@ class InfluenceMethod(CoresetMethod):
         model.eval()
         total_loss = 0.0
         with torch.no_grad():
-            for inputs, targets in test_loader:
+            for batch in test_loader:
+                inputs = batch[0]
+                targets = batch[1]
                 inputs, targets = inputs.to(device), targets.to(device)
                 outputs = model(inputs)
                 loss = self.criterion(outputs, targets)
