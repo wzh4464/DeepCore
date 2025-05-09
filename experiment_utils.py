@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:58:06 am
+# Last Modified: Friday, 9th May 2025 10:35:29 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -23,9 +23,11 @@ from liveval.datasets.flipped_dataset import FlippedDataset
 from liveval.datasets.corrupted_dataset import CorruptedDataset
 from liveval.methods.selection_methods import SELECTION_METHODS
 from liveval.utils import load_checkpoint, save_best_checkpoint, finalize_checkpoint
+from exception_utils import log_exception, ExceptionHandler
 
 # 迁移自 main.py
 
+@log_exception()
 def setup_experiment(args):
     """
     Set up directories, checkpoint, and batch sizes.
@@ -52,6 +54,7 @@ def setup_experiment(args):
     return checkpoint, start_exp, start_epoch
 
 
+@log_exception()
 def initialize_logging_and_datasets(args):
     logger = logging.getLogger(__name__)
     mean, std, dst_train, dst_test = initialize_dataset_properties(args)
@@ -60,6 +63,7 @@ def initialize_logging_and_datasets(args):
     return logger, mean, std, dst_train, dst_test
 
 
+@log_exception()
 def initialize_dataset_properties(args):
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test = (
         datasets.__dict__[args.dataset](args.data_path)
@@ -73,6 +77,7 @@ def initialize_dataset_properties(args):
     return mean, std, dst_train, dst_test
 
 
+@log_exception()
 def initialize_flip_exp(args, seed):
     logger, mean, std, dst_train, dst_test = initialize_logging_and_datasets(args)
     permuted_indices_path = os.path.join(args.save_path, "permuted_indices.csv")
@@ -128,6 +133,7 @@ def initialize_flip_exp(args, seed):
     )
 
 
+@log_exception()
 def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     network = nets.__dict__[model](args.channel, args.num_classes, args.im_size).to(
         args.device
@@ -186,6 +192,7 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     return network, criterion, optimizer, scheduler
 
 
+@log_exception()
 def initialize_dataset_and_model(args, checkpoint):
     """Initialize the dataset and model for training, including data loaders for training and testing."""
     logger, mean, std, dst_train, dst_test = initialize_logging_and_datasets(args)

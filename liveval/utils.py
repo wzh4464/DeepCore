@@ -3,7 +3,7 @@
 # Created Date: Saturday, August 24th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:57:58 am
+# Last Modified: Friday, 9th May 2025 10:35:43 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -25,6 +25,7 @@ import traceback
 import psutil
 import json
 from datetime import datetime
+from exception_utils import log_exception, ExceptionHandler
 
 
 class WeightedSubset(torch.utils.data.Subset):
@@ -218,6 +219,7 @@ def str_to_bool(v):
         raise ArgumentTypeError("Boolean value expected.")
 
 
+@log_exception()
 def save_checkpoint(state, path, epoch, prec):
     print("=> Saving checkpoint for epoch %d, with Prec@1 %f." % (epoch, prec))
     torch.save(state, path)
@@ -263,6 +265,7 @@ class DataLoaderX(torch.utils.data.DataLoader):
         return BackgroundGenerator(super().__iter__())
 
 
+@log_exception()
 def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None):
     """
     Setup logging configuration with exception handling
@@ -564,6 +567,7 @@ def count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)
 
     return num_flipped_in_lowest_scores
 
+@log_exception()
 def load_checkpoint(args):
     """Load checkpoint if resume is specified."""
     logger = logging.getLogger(__name__)
@@ -648,6 +652,7 @@ def save_best_checkpoint(
     return best_prec1
 
 
+@log_exception()
 def finalize_checkpoint(
     args,
     exp,

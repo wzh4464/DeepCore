@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:44 pm
+# Last Modified: Friday, 9th May 2025 10:35:52 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -19,6 +19,7 @@ from copy import deepcopy
 from .. import nets
 from torchvision import transforms
 import logging
+from exception_utils import log_exception, ExceptionHandler
 
 
 class EarlyTrain(CoresetMethod):
@@ -55,6 +56,7 @@ class EarlyTrain(CoresetMethod):
         dst_test (Dataset, optional): Test dataset. Defaults to None.
     """
 
+    @log_exception()
     def __init__(
         self,
         dst_train,
@@ -187,6 +189,7 @@ class EarlyTrain(CoresetMethod):
 
         self.logger.info(f"Set all random seeds to {seed}")
 
+    @log_exception()
     def train(self, epoch, list_of_train_idx, **kwargs):
         """
         Train the model for one epoch.
@@ -245,6 +248,7 @@ class EarlyTrain(CoresetMethod):
             self.model_optimizer.step()
         return self.finish_train()
 
+    @log_exception()
     def run(self):
         """
         Run the entire training process.
@@ -278,6 +282,7 @@ class EarlyTrain(CoresetMethod):
 
         return self.finish_run()
 
+    @log_exception()
     def setup_optimizer_and_scheduler(self):
         """
         Defined:
@@ -319,6 +324,7 @@ class EarlyTrain(CoresetMethod):
             )
         # Add more scheduler options as needed
 
+    @log_exception()
     def test(self, epoch):
         """
         Test the model's performance.
@@ -429,18 +435,21 @@ class EarlyTrain(CoresetMethod):
         """
         self.logger.info("finish_train()")
 
+    @log_exception()
     def before_epoch(self):
         """
         Perform actions before each epoch starts.
         """
         self.logger.info("before_epoch()")
 
+    @log_exception()
     def after_epoch(self):
         """
         Perform actions after each epoch ends.
         """
         self.logger.info("after_epoch()")
 
+    @log_exception()
     def before_run(self):
         """
         Perform actions before the entire run starts.

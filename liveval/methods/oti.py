@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:24:56 am
+# Last Modified: Friday, 9th May 2025 10:36:07 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader
 from liveval.datasets.flipped_dataset import IndexedDataset
 
 import sys
+from exception_utils import log_exception, ExceptionHandler
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 from liveval.utils import ScoreTracker, custom_collate, count_flipped_in_lowest_scores
@@ -63,6 +64,7 @@ class OTI(EarlyTrain):
     """
 
     # Constructor and Initialization Methods
+    @log_exception()
     def __init__(
         self,
         dst_train,
@@ -326,6 +328,7 @@ class OTI(EarlyTrain):
             return torch.load(f, weights_only=True)
 
     # Score Calculation Methods
+    @log_exception()
     def _calculate_scores(
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
@@ -465,6 +468,7 @@ class OTI(EarlyTrain):
 
         return processes
 
+    @log_exception()
     def _single_gpu_calculate_scores(
         self,
         best_params,
@@ -527,6 +531,7 @@ class OTI(EarlyTrain):
         num_detected = len(detected_flipped)
         return num_detected
 
+    @log_exception()
     def _multi_gpu_calculate_scores(
         self,
         best_params,
@@ -537,6 +542,7 @@ class OTI(EarlyTrain):
         """Calculate scores using multiple GPUs with multiple workers per GPU."""
         raise NotImplementedError("Multi-GPU support is not implemented yet")
 
+    @log_exception()
     def _calculate_scores_on_device(
         self,
         device_id: int,
@@ -781,7 +787,7 @@ class OTI(EarlyTrain):
             return torch.load(f, weights_only=True)
 
     # main method
-    @override
+    @log_exception()
     def select(
         self,
         use_regularization=False,
@@ -864,6 +870,7 @@ class OTI(EarlyTrain):
         scores_dataframe.to_csv(scores_path, index=False)
         self.logger.info(f"{message_prefix}{scores_path}")
 
+    @log_exception()
     def _get_score(self, use_regularization, use_learning_rate, use_sliding_window):
         """
         Computes and returns the scores based on the specified mode.

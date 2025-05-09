@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:19:57 am
+# Last Modified: Friday, 9th May 2025 10:35:17 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -41,6 +41,7 @@ from experiment_utils import (
 )
 from logging_utils import setup_logging, get_logger
 import sys
+from exception_utils import ExceptionHandler, log_exception
 
 def parse_args():
     """
@@ -445,6 +446,7 @@ def parse_args():
     return args
 
 
+@log_exception()
 def print_experiment_info(args, exp, checkpoint_name):
     """Print the experiment information."""
     logger = logging.getLogger(__name__)
@@ -455,6 +457,7 @@ def print_experiment_info(args, exp, checkpoint_name):
     )
 
 
+@log_exception()
 def run_experiment(args, checkpoint, start_exp, start_epoch):
     """Run the main training and evaluation loop."""
     logger = logging.getLogger(__name__)
@@ -497,6 +500,7 @@ def run_experiment(args, checkpoint, start_exp, start_epoch):
         _export_flipped_scores_summary(logger, args, start_exp, checkpoint)
 
 
+@log_exception()
 def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
     scores, flipped_indices, permuted_indices, flipped_train_dataset = (
         _perform_flip_experiment(logger, args, start_exp, checkpoint)
@@ -520,6 +524,7 @@ def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
     count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)
 
 
+@log_exception()
 def _calculate_average_score(scores, logger, **kwargs):
     """Calculate the average score for each sample over all experiments."""
     average_score = torch.mean(torch.stack(scores), dim=0)
@@ -531,6 +536,7 @@ def _calculate_average_score(scores, logger, **kwargs):
     return average_score, std_score
 
 
+@log_exception()
 def _perform_flip_experiment(logger, args, start_exp, checkpoint):
     logger.info(
         f"Running flip experiment with {args.num_flip} flips on {args.num_scores} samples"
@@ -582,6 +588,7 @@ def _perform_flip_experiment(logger, args, start_exp, checkpoint):
     return scores, flipped_indices, permuted_indices, flipped_train_dataset
 
 
+@log_exception()
 def setup_checkpoint_name(args, exp):
     """Set up checkpoint name based on experiment details."""
     return "{dst}_{net}_{mtd}_exp{exp}_epoch{epc}_{dat}_{fr}_".format(
@@ -595,6 +602,7 @@ def setup_checkpoint_name(args, exp):
     )
 
 
+@log_exception()
 def main():
     """
     Main function for running the deep learning experiment, now supporting OTI method.
@@ -643,5 +651,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logging.exception("Caught an exception in main:")
+        ExceptionHandler().handle(e, context="main")
         raise
