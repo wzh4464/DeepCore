@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:35 pm
+# Last Modified: Sunday, 11th May 2025 12:15:06 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -118,3 +118,52 @@ class InfluenceMethod(CoresetMethod):
         # 使用多个GPU进行并行计算
         # 示例：分配任务到 self.num_gpus 个GPU
         # ...existing code...
+
+    def train_for_epochs(self, num_epochs, train_indices, test_loader=None):
+        """
+        训练模型指定轮数，并在每轮后可选地进行测试。
+
+        参数：
+            num_epochs (int): 训练的轮数。
+            train_indices (list): 训练样本的索引列表。
+            test_loader (DataLoader, optional): 测试数据加载器。默认为 None。
+        返回：
+            float: 如果提供 test_loader，返回训练后最终的测试准确率。
+        """
+        self.logger.info(f"Training for {num_epochs} epochs with {len(train_indices)} samples")
+
+        # 确保模型已初始化
+        if not hasattr(self, 'model') or self.model is None:
+            if hasattr(self, 'before_run'):
+                self.before_run()
+
+        test_acc = None
+
+        for epoch in range(num_epochs):
+            if hasattr(self, 'before_epoch'):
+                self.before_epoch()
+            if hasattr(self, 'train'):
+                self.train(epoch, train_indices)
+            # 如有需要，进行测试
+            if test_loader is not None and hasattr(self, 'test'):
+                _ = self.test(epoch)
+            if hasattr(self, 'after_epoch'):
+                self.after_epoch()
+
+        # 最终评估
+        if test_loader is not None and hasattr(self, 'model'):
+            self.model.eval()
+            correct = 0
+            total = 0
+            import torch
+            with torch.no_grad():
+                for inputs, targets, *_ in test_loader:
+                    inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
+                    outputs = self.model(inputs)
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+            test_acc = correct / total if total > 0 else 0.0
+            self.last_test_acc = test_acc
+            self.logger.info(f"Final test accuracy: {test_acc:.4f}")
+        return test_acc
