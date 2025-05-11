@@ -3,7 +3,7 @@
 # Created Date: Thursday, November 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:13:06 am
+# Last Modified: Sunday, 11th May 2025 12:26:56 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -84,6 +84,9 @@ class LOO(InfluenceMethod):
         """
         处理分配给特定 GPU 的样本索引，计算每个移除样本后的测试集损失。
         """
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.set_device(device_id)  # 显式设置当前进程的 CUDA 设备
         device = torch.device(
             f"cuda:{device_id}" if torch.cuda.is_available() else "cpu"
         )
