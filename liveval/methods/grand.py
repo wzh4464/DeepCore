@@ -13,12 +13,12 @@ class GraNd(EarlyTrain):
         fraction=0.5,
         random_seed=None,
         epochs=200,
-        repeat=10,
+        repeat=1,
         specific_model=None,
         balance=False,
         **kwargs
     ):
-        super().__init__(dst_train, args, fraction, random_seed, epochs, specific_model)
+        super().__init__(dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs)
         self.epochs = epochs
         self.n_train = len(dst_train)
         self.coreset_size = round(self.n_train * fraction)
@@ -27,10 +27,12 @@ class GraNd(EarlyTrain):
 
         self.balance = balance
 
+    @override
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
+        super().while_update(outputs, loss, targets, epoch, batch_idx, batch_size)
         if batch_idx % self.args.print_freq == 0:
             print(
-                "| Epoch [%3d/%3d] Iter[%3d/%3d]\t\tLoss: %.4f"
+                "| Epoch [%3d/%3d] Iter[%3d/%3d]\\t\\tLoss: %.4f"
                 % (
                     epoch,
                     self.epochs,
@@ -40,11 +42,25 @@ class GraNd(EarlyTrain):
                 )
             )
 
+    @override
     def before_run(self):
         super().before_run()
         if isinstance(self.model, MyDataParallel):
             self.model = self.model.module
 
+    @override
+    def after_epoch(self):
+        super().after_epoch()
+
+    @override
+    def train(self, epoch, list_of_train_idx):
+        return super().train(epoch, list_of_train_idx)
+
+    @override
+    def after_loss(self, outputs, loss, targets, batch_inds, epoch):
+        super().after_loss(outputs, loss, targets, batch_inds, epoch)
+
+    @override
     def finish_run(self):
         self.model.embedding_recorder.record_embedding = (
             True  # recording embedding vector
@@ -98,7 +114,13 @@ class GraNd(EarlyTrain):
 
         self.model.embedding_recorder.record_embedding = False
 
+    @override
+    def _initialize_data_loader(self):
+        super()._initialize_data_loader()
+
+    @override
     def select(self, **kwargs):
+        self._initialize_data_loader()
         # Initialize a matrix to save norms of each sample on idependent runs
         self.get_scores()
         if not self.balance:

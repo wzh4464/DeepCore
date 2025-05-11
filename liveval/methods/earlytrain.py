@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 9:22:22 pm
+# Last Modified: Sunday, 11th May 2025 11:50:35 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -323,31 +323,26 @@ class EarlyTrain(CoresetMethod):
         """
         Test the model's performance.
 
+        NOTE TO DEVELOPERS: 
+        If you override this `test` method in a subclass, ensure you correctly 
+        initialize the `test_loader` using `self._get_test_loader()` and handle 
+        the case where it might be `None`, similar to the implementation below.
+        This ensures consistent and safe test data loading.
+
         Args:
             epoch (int): Current epoch number.
         """
+        if self.dst_test is None:
+            self.logger.error("No test dataset provided (self.dst_test is None). Skipping test.")
+            return
         self.logger.info(f"test({epoch})")
         self.model.no_grad = True
         self.model.eval()
 
-        test_loader = torch.utils.data.DataLoader(
-            (
-                self.dst_test
-                if self.args.selection_test_fraction == 1.0
-                else torch.utils.data.Subset(
-                    self.dst_test,
-                    np.random.choice(
-                        np.arange(len(self.dst_test)),
-                        round(len(self.dst_test) * self.args.selection_test_fraction),
-                        replace=False,
-                    ),
-                )
-            ),
-            batch_size=self.args.selection_batch,
-            shuffle=False,
-            num_workers=self.args.workers,
-            pin_memory=True,
-        )
+        test_loader, _ = self._get_test_loader()
+        if test_loader is None:
+            return
+
         correct = 0.0
         total = 0.0
 
@@ -610,3 +605,25 @@ class EarlyTrain(CoresetMethod):
             self.last_test_acc = test_acc
             self.logger.info(f"Final test accuracy: {test_acc:.4f}")
         return test_acc
+
+    def _get_test_loader(self):
+        """
+        创建并返回测试数据的 DataLoader。
+        保证 self.dst_test 不为 None。
+        返回：
+            tuple: (test_loader, test_indices)
+                - test_loader: DataLoader for test data
+                - test_indices: Indices of the test data
+        """
+        if self.dst_test is None:
+            self.logger.error("No test dataset provided (self.dst_test is None). Skipping test.")
+            return None, None
+        test_loader = torch.utils.data.DataLoader(
+            self.dst_test,
+            batch_size=self.args.selection_batch,
+            shuffle=False,
+            num_workers=self.args.workers,
+            pin_memory=True,
+        )
+        indices = np.arange(len(self.dst_test))
+        return test_loader, indices
