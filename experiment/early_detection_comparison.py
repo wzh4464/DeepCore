@@ -1,4 +1,4 @@
-from experiment_utils import initialize_flip_exp, find_found_flipped_indices
+from experiment.experiment_utils import initialize_flip_exp, find_found_flipped_indices
 from liveval.methods.selection_methods import SELECTION_METHODS
 import pandas as pd
 import torch

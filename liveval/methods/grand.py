@@ -6,6 +6,7 @@ from ..nets.nets_utils import MyDataParallel
 
 
 class GraNd(EarlyTrain):
+
     def __init__(
         self,
         dst_train,
@@ -16,7 +17,7 @@ class GraNd(EarlyTrain):
         repeat=1,
         specific_model=None,
         balance=False,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs)
         self.epochs = epochs
@@ -25,7 +26,7 @@ class GraNd(EarlyTrain):
         self.specific_model = specific_model
         self.repeat = repeat
         self.balance = balance
-        
+
         # 添加对flipped indices的跟踪
         self.flipped_indices = (
             dst_train.get_flipped_indices()

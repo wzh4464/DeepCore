@@ -1,5 +1,5 @@
-from experiment_utils import initialize_flip_exp
-from liveval.utils import count_flipped_in_lowest_scores
+from experiment.experiment_utils import initialize_flip_exp
+from liveval.utils.utils import count_flipped_in_lowest_scores
 import pandas as pd
 import torch
 

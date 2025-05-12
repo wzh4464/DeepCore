@@ -1,4 +1,4 @@
-from experiment_utils import (
+from experiment.experiment_utils import (
     initialize_dataset_and_model,
     train_and_evaluate_model,
     print_experiment_info,

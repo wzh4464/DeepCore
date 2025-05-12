@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 5:16:39 pm
+# Last Modified: Monday, 12th May 2025 9:22:26 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -34,10 +34,10 @@ from torch.utils.data import DataLoader
 from liveval.datasets.flipped_dataset import IndexedDataset
 
 import sys
-from exception_utils import log_exception, ExceptionHandler
+from liveval.utils.exception_utils import log_exception, ExceptionHandler
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from liveval.utils import ScoreTracker, custom_collate, count_flipped_in_lowest_scores
+from liveval.utils.utils import ScoreTracker, custom_collate, count_flipped_in_lowest_scores
 
 
 class TqdmLoggingHandler(logging.Handler):

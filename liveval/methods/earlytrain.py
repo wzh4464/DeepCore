@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Sunday, 11th May 2025 11:50:35 am
+# Last Modified: Monday, 12th May 2025 9:22:26 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -19,7 +19,7 @@ from copy import deepcopy
 from .. import nets
 from torchvision import transforms
 import logging
-from exception_utils import log_exception, ExceptionHandler
+from liveval.utils.exception_utils import log_exception, ExceptionHandler
 
 
 class EarlyTrain(CoresetMethod):

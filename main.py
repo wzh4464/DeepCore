@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Friday, 9th May 2025 10:48:48 am
+# Last Modified: Monday, 12th May 2025 9:21:09 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -23,13 +23,13 @@ from liveval.datasets.corrupted_dataset import CorruptedDataset
 from liveval.methods.selection_methods import SELECTION_METHODS
 from liveval.methods.coresetmethod import CoresetMethod
 from torchvision import transforms
-from liveval.utils import *
+from liveval.utils.utils import *
 from datetime import datetime
 from time import sleep
 from typing import Type
 import logging
 import pandas as pd
-from experiment_utils import (
+from experiment.experiment_utils import (
     setup_experiment,
     load_checkpoint,
     initialize_dataset_and_model,
@@ -39,9 +39,9 @@ from experiment_utils import (
     initialize_network,
     train_and_evaluate_model
 )
-from logging_utils import setup_logging, get_logger
+from liveval.utils.logging_utils import setup_logging, get_logger
 import sys
-from exception_utils import ExceptionHandler, log_exception
+from liveval.utils.exception_utils import ExceptionHandler, log_exception
 
 def parse_args():
     """
@@ -411,8 +411,8 @@ def parse_args():
         "--exp",
         type=str,
         default="train_and_eval",
-        choices=["train_and_eval", "flip", "corrupt"],
-        help="Specify the experiment mode: 'train_and_eval', 'flip', or 'corrupt'. Default is 'train_and_eval'.",
+        choices=["train_and_eval", "flip", "corrupt", "early_detection"],
+        help="Specify the experiment mode: 'train_and_eval', 'flip', 'corrupt', or 'early_detection'. Default is 'train_and_eval'.",
     )
 
     parser.add_argument(
@@ -668,6 +668,9 @@ def main():
     elif args.exp == "corrupt":
         from experiment import corrupt
         corrupt.run(args, checkpoint, start_exp, start_epoch)
+    elif args.exp == "early_detection":
+        from experiment import early_detection_comparison
+        early_detection_comparison.run(args, checkpoint, start_exp, start_epoch)
     else:
         logger.error(f"未知实验类型: {args.exp}")
         raise ValueError(f"未知实验类型: {args.exp}")

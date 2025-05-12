@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Claude
 # -----
-# Last Modified: Friday, 9th May 2025 5:00:00 pm
+# Last Modified: Monday, 12th May 2025 9:22:15 am
 # -----
 # HISTORY:
 # Date      		By   	Comments
@@ -21,7 +21,7 @@ from .earlytrain import EarlyTrain
 from .selection_methods import SELECTION_METHODS
 from liveval.datasets.flipped_dataset import IndexedDataset
 from torch.utils.data import DataLoader, Subset
-from liveval.utils import count_flipped_in_lowest_scores
+from liveval.utils.utils import count_flipped_in_lowest_scores
 
 
 class InfluenceFunction(EarlyTrain):
