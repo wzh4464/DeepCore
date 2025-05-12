@@ -24,7 +24,7 @@ def run(args, checkpoint, start_exp, start_epoch):
 
         # save flipped_selection_from
         pd.DataFrame(flipped_selection_from).to_csv(
-            f"{args.save_path}/flipped_selection_from_{args.timestamp}_{exp}.csv",
+            f"{args.save_path}/flipped_selection_from.csv",
             index=False,
         )
 
@@ -116,5 +116,5 @@ def run(args, checkpoint, start_exp, start_epoch):
         _, label, _ = flipped_train_dataset.dataset[idx]
         labels.append(label)
     df["label"] = labels
-    df.to_csv(f"{args.save_path}/average_score_{args.timestamp}.csv", index=False)
+    df.to_csv(f"{args.save_path}/average_score.csv", index=False)
     count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)

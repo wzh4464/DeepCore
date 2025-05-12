@@ -532,7 +532,7 @@ def _export_flipped_scores_summary(logger, args, start_exp, checkpoint):
         labels.append(label)
     df["label"] = labels
 
-    df.to_csv(f"{args.save_path}/average_score_{args.timestamp}.csv", index=False)
+    df.to_csv(f"{args.save_path}/average_score.csv", index=False)
 
     # find num_flip samples with the lowest average_score, see how many of them are flipped
     count_flipped_in_lowest_scores(logger, args, flipped_indices, average_score)

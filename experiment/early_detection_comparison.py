@@ -48,7 +48,7 @@ def run(args, checkpoint, start_exp, start_epoch):
 
         # 记录原始翻转样本
         pd.DataFrame(flipped_selection_from).to_csv(
-            f"{args.save_path}/flipped_selection_from_{args.timestamp}_{exp}.csv",
+            f"{args.save_path}/flipped_selection_from.csv",
             index=False,
         )
 
