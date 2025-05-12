@@ -3,7 +3,7 @@
 # Created Date: Tuesday, November 26th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:58 pm
+# Last Modified: Monday, 12th May 2025 1:23:43 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -26,7 +26,12 @@ class CorruptedDataset(FlippedDataset):
     ):
         self.dataset = dataset
         self.indices = indices
-        self.targets = dataset.targets
+        if hasattr(dataset, 'targets'):
+            self.targets = dataset.targets
+        elif isinstance(dataset, IndexedDataset):
+            self.targets = dataset.targets
+        else:
+            self.targets = torch.tensor([dataset[i][1] for i in range(len(dataset))])
         self.num_scores = num_scores
         self.num_corrupt = num_corrupt
         self.data = dataset_name.lower()

@@ -24,8 +24,24 @@ class GraNd(EarlyTrain):
         self.coreset_size = round(self.n_train * fraction)
         self.specific_model = specific_model
         self.repeat = repeat
-
         self.balance = balance
+        
+        # 添加对flipped indices的跟踪
+        self.flipped_indices = (
+            dst_train.get_flipped_indices()
+            if hasattr(dst_train, "get_flipped_indices")
+            else []
+        )
+        # 添加对scores indices的跟踪
+        self.scores_indices = (
+            dst_train.get_flipped_selection_from()
+            if hasattr(dst_train, "get_flipped_selection_from")
+            else []
+        )
+        if self.flipped_indices:
+            print(f"[GraNd] 跟踪{len(self.flipped_indices)}个翻转样本")
+        if self.scores_indices:
+            print(f"[GraNd] 为{len(self.scores_indices)}个样本计算分数")
 
     @override
     def while_update(self, outputs, loss, targets, epoch, batch_idx, batch_size):
@@ -141,14 +157,34 @@ class GraNd(EarlyTrain):
 
     @override
     def get_scores(self):
+        # 获取scores_indices（如果可用）
+        self.scores_indices = (
+            self.dst_train.get_flipped_selection_from()
+            if hasattr(self.dst_train, "get_flipped_selection_from")
+            else []
+        )
+        # 如果有scores_indices，则打印信息
+        if self.scores_indices:
+            print(f"[GraNd] 为{len(self.scores_indices)}个特定样本计算分数")
+        # 计算标准GraNd分数
         self.norm_matrix = torch.zeros(
             [self.n_train, self.repeat], requires_grad=False
         ).to(self.args.device)
-
         for self.cur_repeat in range(self.repeat):
             self.before_run()
             self.run()
             self.random_seed = self.random_seed + 5
-
+        # 计算平均norm
         self.norm_mean = torch.mean(self.norm_matrix, dim=1).cpu().detach().numpy()
-        return self.norm_mean[self.dst_train.indices]
+        # 如果有scores_indices，则创建一个新的分数数组，只为特定的索引设置分数
+        if self.scores_indices:
+            # 创建全为nan的数组
+            filtered_scores = np.full(len(self.dst_train.indices), np.nan)
+            # 只为scores_indices中的索引填充实际分数
+            for i, idx in enumerate(self.dst_train.indices):
+                if idx in self.scores_indices:
+                    filtered_scores[i] = self.norm_mean[i]
+            return filtered_scores
+        else:
+            # 如果没有scores_indices，返回所有分数
+            return self.norm_mean
