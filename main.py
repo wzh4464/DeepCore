@@ -342,7 +342,7 @@ def parse_args():
 
     # OTI specific arguments
     parser.add_argument(
-        "--num_gpus", type=int, default=3, help="number of GPUs to use for OTI"
+        "--num_gpus", type=int, default=1, help="number of GPUs to use for OTI"
     )
     parser.add_argument(
         "--oti_mode",
@@ -639,7 +639,8 @@ def main():
     import torch.backends.cudnn as cudnn
     args = parse_args()
     # 日志初始化
-    logger = setup_logging(log_level=args.log_level)
+    # TODO: for one gpu
+    logger = setup_logging(log_level=args.log_level, gpu_id=args.gpu)
     logger.info(f"Parsed arguments: {args}")
 
     # 打印所有物理GPU及名称

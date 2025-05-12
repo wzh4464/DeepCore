@@ -8,11 +8,11 @@ class GpuPrefixFilter(logging.Filter):
     """
     日志Filter，为每条日志加上[GPU-x]或[CPU]前缀。
     """
-    def __init__(self):
+    def __init__(self, gpu_id=None):
         super().__init__()
-        self.gpu_prefix = self.detect_gpu_prefix()
+        self.gpu_prefix = self.detect_gpu_prefix(gpu_id)
 
-    def detect_gpu_prefix(self):
+    def detect_gpu_prefix(self, gpu_id):
         if torch.cuda.is_available():
             # 获取当前进程实际使用的物理GPU编号（取第一个可用）
             try:
@@ -23,12 +23,12 @@ class GpuPrefixFilter(logging.Filter):
                     visible_list = [int(x) for x in cuda_visible.split(",") if x.strip().isdigit()]
                     if visible_list:
                         # 取当前进程的默认GPU
-                        current = torch.cuda.current_device()
+                        # current = torch.cuda.current_device()
                         # 物理编号
-                        return f"[GPU-{visible_list[current]}]"
+                        return f"[GPU-{visible_list[gpu_id]}]"
                 # 否则直接用物理编号
-                current = torch.cuda.current_device()
-                return f"[GPU-{current}]"
+                # current = torch.cuda.current_device()
+                return f"[GPU-{gpu_id}]"
             except Exception:
                 return "[GPU-?]"
         else:
@@ -38,7 +38,7 @@ class GpuPrefixFilter(logging.Filter):
         record.gpu_prefix = self.gpu_prefix
         return True
 
-def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None):
+def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None, gpu_id=None):
     """
     设置统一的日志配置，支持文件和控制台输出，并为每条日志加上[GPU-x]或[CPU]前缀。
 
@@ -65,7 +65,7 @@ def setup_logging(log_dir="logs", log_level=logging.INFO, log_name=None):
         ],
     )
     # 给所有handler加上GPU前缀Filter
-    gpu_filter = GpuPrefixFilter()
+    gpu_filter = GpuPrefixFilter(gpu_id)
     for handler in logging.getLogger().handlers:
         handler.addFilter(gpu_filter)
     logger = logging.getLogger()
