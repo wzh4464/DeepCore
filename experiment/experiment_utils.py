@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 9:21:04 am
+# Last Modified: Monday, 12th May 2025 10:21:55 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -24,8 +24,13 @@ from liveval.datasets.corrupted_dataset import CorruptedDataset
 from liveval.methods.selection_methods import SELECTION_METHODS
 from liveval.utils.utils import load_checkpoint, save_best_checkpoint, finalize_checkpoint
 from liveval.utils.exception_utils import log_exception, ExceptionHandler
+import matplotlib.pyplot as plt
+import glob
+import warnings
 
 # 迁移自 main.py
+
+plt.rcParams["font.family"] = "Times New Roman"
 
 @log_exception()
 def setup_experiment(args):
@@ -421,3 +426,164 @@ def find_found_flipped_indices(score, flipped_indices, num_to_select=None):
     # 找到这些最低分数中哪些是反转点
     found_flipped_indices = [i for i in lowest_score_indices if i in flipped_indices]
     return found_flipped_indices
+
+def create_comparison_visualizations(results_dirname, save_path):
+    """创建比较不同方法的可视化图表（使用PlotManager），自动从save_path读取最新timestamp"""
+    # 自动查找最新的 early_detection_results_*.csv
+    import pandas as pd
+    results_df = pd.read_csv(results_dirname, index_col=False)
+    result_files = glob.glob(f"{save_path}/early_detection_results_*.csv")
+    if not result_files:
+        raise FileNotFoundError(f"未找到 {save_path}/early_detection_results_*.csv 文件")
+    # 提取所有 timestamp
+    timestamps = []
+    for f in result_files:
+        # 文件名格式 early_detection_results_{timestamp}.csv
+        base = os.path.basename(f)
+        try:
+            ts = base.split("early_detection_results_")[1].split(".csv")[0]
+            timestamps.append(ts)
+        except Exception:
+            continue
+    if not timestamps:
+        raise ValueError("未能从文件名中提取到 timestamp")
+    if len(timestamps) > 1:
+        warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
+    timestamp = max(timestamps)
+
+    methods = results_df["method"].unique()
+
+    # 1. 检测率与epoch数的关系
+    pm1 = PlotManager()
+    for method in methods:
+        method_data = results_df[results_df["method"] == method]
+        pm1.plot(method_data["epochs"], method_data["detection_rate"], label=method)
+    pm1.set_xlabel("Number of Training Epochs")
+    pm1.set_ylabel("Detection Rate")
+    pm1.set_title("Flipped Sample Detection Rate vs Training Epochs")
+    pm1.add_legend()
+    pm1.add_grid()
+    pm1.savefig(f"{save_path}/detection_rate_vs_epochs_{timestamp}.png")
+    pm1.close()
+
+    # 2. 准确率提升与epoch数的关系
+    pm2 = PlotManager()
+    for method in methods:
+        method_data = results_df[results_df["method"] == method]
+        accuracy_improvement = method_data["accuracy_after"] - method_data["accuracy_before"]
+        pm2.plot(method_data["epochs"], accuracy_improvement, label=method)
+    pm2.set_xlabel("Number of Training Epochs")
+    pm2.set_ylabel("Accuracy Improvement")
+    pm2.set_title("Accuracy Improvement after Removing Detected Samples vs Training Epochs")
+    pm2.add_legend()
+    pm2.add_grid()
+    pm2.savefig(f"{save_path}/accuracy_improvement_vs_epochs_{timestamp}.png")
+    pm2.close()
+
+    # 3. 检测率与准确率提升的关系
+    pm3 = PlotManager()
+    for method in methods:
+        method_data = results_df[results_df["method"] == method]
+        accuracy_improvement = method_data["accuracy_after"] - method_data["accuracy_before"]
+        pm3.scatter(method_data["detection_rate"], accuracy_improvement, label=method)
+    pm3.set_xlabel("Detection Rate")
+    pm3.set_ylabel("Accuracy Improvement")
+    pm3.set_title("Accuracy Improvement vs Detection Rate")
+    pm3.add_legend()
+    pm3.add_grid()
+    pm3.savefig(f"{save_path}/accuracy_vs_detection_{timestamp}.png")
+    pm3.close()
+
+class PlotManager:
+    """
+    画图管理器，支持灵活设置画图类型、数据、颜色、字体、字号、线宽、legend、label、x/y范围等参数。
+    默认参数参考 cleansing_plot.py。
+    """
+    def __init__(self,
+                 fig_size=(12, 8),
+                 font_family='Times New Roman',
+                 font_size=28,
+                 axes_titlesize=28,
+                 axes_labelsize=28,
+                 xtick_labelsize=26,
+                 ytick_labelsize=26,
+                 legend_fontsize=26,
+                 color_list=None):
+        import matplotlib.pyplot as plt
+        self.plt = plt
+        self.fig, self.ax = plt.subplots(figsize=fig_size)
+        # 默认颜色
+        if color_list is None:
+            self.color_list = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628']
+        else:
+            self.color_list = color_list
+        # 设置全局字体
+        plt.rcParams['font.family'] = font_family
+        plt.rcParams['font.size'] = font_size
+        plt.rcParams['axes.titlesize'] = axes_titlesize
+        plt.rcParams['axes.labelsize'] = axes_labelsize
+        plt.rcParams['xtick.labelsize'] = xtick_labelsize
+        plt.rcParams['ytick.labelsize'] = ytick_labelsize
+        plt.rcParams['legend.fontsize'] = legend_fontsize
+        self.line_handles = []
+        self.label_handles = []
+        self.color_idx = 0
+
+    def plot(self, x, y, label=None, color=None, linewidth=4, linestyle='-', marker=None, **kwargs):
+        if color is None:
+            color = self.color_list[self.color_idx % len(self.color_list)]
+            self.color_idx += 1
+        line, = self.ax.plot(x, y, linestyle=linestyle, marker=marker, label=label, color=color, linewidth=linewidth, **kwargs)
+        if label is not None:
+            self.line_handles.append(line)
+            self.label_handles.append(label)
+        return line
+
+    def scatter(self, x, y, label=None, color=None, s=100, **kwargs):
+        if color is None:
+            color = self.color_list[self.color_idx % len(self.color_list)]
+            self.color_idx += 1
+        sc = self.ax.scatter(x, y, label=label, color=color, s=s, **kwargs)
+        if label is not None:
+            self.line_handles.append(sc)
+            self.label_handles.append(label)
+        return sc
+
+    def set_xlabel(self, label):
+        self.ax.set_xlabel(label)
+
+    def set_ylabel(self, label):
+        self.ax.set_ylabel(label)
+
+    def set_title(self, title):
+        self.ax.set_title(title)
+
+    def set_xlim(self, xmin=None, xmax=None):
+        self.ax.set_xlim(left=xmin, right=xmax)
+
+    def set_ylim(self, ymin=None, ymax=None):
+        self.ax.set_ylim(bottom=ymin, top=ymax)
+
+    def add_legend(self, handles=None, labels=None, loc='best', **kwargs):
+        if handles is None:
+            handles = self.line_handles
+        if labels is None:
+            labels = self.label_handles
+        self.ax.legend(handles=handles, labels=labels, loc=loc, **kwargs)
+
+    def add_grid(self, which='both', axis='both', **kwargs):
+        self.ax.grid(which=which, axis=axis, **kwargs)
+
+    def savefig(self, path, dpi=300, tight=True):
+        if tight:
+            self.plt.tight_layout()
+        self.fig.savefig(path, dpi=dpi)
+
+    def clear(self):
+        self.ax.cla()
+        self.line_handles = []
+        self.label_handles = []
+        self.color_idx = 0
+
+    def close(self):
+        self.plt.close(self.fig)
