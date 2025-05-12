@@ -46,7 +46,7 @@ experiments = [
 base_cmd = (
     "/home/jie/DeepCore/.venv/bin/python -m main --dataset MNIST --model LeNet --exp early_detection "
     "--num_exp 1 --num_eval 1 --epochs 5 --selection_epochs 5 --data_path ./data "
-    "--optimizer SGD --scheduler CosineAnnealingLR --num_gpus 1 --workers 8 "
+    "--optimizer SGD --scheduler CosineAnnealingLR --num_gpus 1 --workers 1 "
 )
 
 def run_task(task):
@@ -68,21 +68,22 @@ def run_experiment(experiment):
     print(f"\n{'='*80}")
     print(f"开始运行 {experiment['name']} 早期检测实验")
     print(f"{'='*80}\n")
-    
+
     # 生成所有任务
     all_tasks = []
     for lr in lrs:
         for num_flip in num_flips:
             for seed in seeds:
                 all_tasks.append((None, lr, num_flip, seed, experiment))  # 先不分配 GPU
-    
+
     # 动态分配 GPU
     task_queue = Queue()
     for task in all_tasks:
         task_queue.put(task)
-    
-    gpu_status = {gpu: None for gpu in gpus}  # None 表示空闲
-    
+
+    num_tasks = len(all_tasks)
+    max_threads = num_tasks / len(gpus)
+
     def worker(gpu_id):
         while not task_queue.empty():
             try:
@@ -92,16 +93,17 @@ def run_experiment(experiment):
             task = (gpu_id, lr, num_flip, seed, exp)
             run_task(task)
             task_queue.task_done()
-    
+
     threads = []
     for gpu in gpus:
-        t = threading.Thread(target=worker, args=(gpu,))
-        t.start()
-        threads.append(t)
-    
+        for _ in range(max_threads):
+            t = threading.Thread(target=worker, args=(gpu,))
+            t.start()
+            threads.append(t)
+
     for t in threads:
         t.join()
-    
+
     print(f"\n{experiment['name']} 早期检测实验完成！")
 
 if __name__ == "__main__":
