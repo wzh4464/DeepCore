@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 9:21:09 am
+# Last Modified: Monday, 12th May 2025 10:29:26 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -671,6 +671,7 @@ def main():
     elif args.exp == "early_detection":
         from experiment import early_detection_comparison
         early_detection_comparison.run(args, checkpoint, start_exp, start_epoch)
+        # early_detection_comparison.plot_detection_rate_vs_epochs(args, checkpoint, start_exp, start_epoch)
     else:
         logger.error(f"未知实验类型: {args.exp}")
         raise ValueError(f"未知实验类型: {args.exp}")
