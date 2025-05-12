@@ -23,7 +23,7 @@ def run(args, checkpoint, start_exp, start_epoch):
     logger.info(f"Running early detection comparison with {args.num_flip} flips")
 
     # 要比较的方法列表
-    methods = ["GraNd", "influence_function", "OTI"]
+    methods = ["OTI", "GraNd", "influence_function"]
     # 要测试的epoch列表，例如[1, 3, 5, 10, 15]
     epochs_to_test = [1, 2, 3, 4, 5]
 
