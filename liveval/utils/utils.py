@@ -708,3 +708,31 @@ def finalize_checkpoint(
                 epoch=args.epochs - 1,
                 prec=best_prec1,
             )
+
+def count_points_in_lowest_scores(logger, args, target_indices, scores, threshold=None):
+    """
+    计算在最低分数中找到的目标点数量
+    参数:
+        logger: 日志对象
+        args: 命令行参数
+        target_indices: 目标点索引
+        scores: 计算的分数
+        threshold: 分数阈值，默认为目标点数量
+    返回:
+        找到的目标点数量
+    """
+    if threshold is None:
+        threshold = len(target_indices)
+    # 获取最低分数的索引
+    if isinstance(scores, torch.Tensor):
+        scores_np = scores.cpu().numpy()
+    else:
+        scores_np = np.array(scores)
+    lowest_score_indices = np.argsort(scores_np)[:threshold]
+    found_indices = set(lowest_score_indices) & set(target_indices)
+    num_found = len(found_indices)
+    logger.info(
+        f"在 {threshold} 个最低分数中找到 {num_found} 个目标点，"
+        f"检测率: {num_found / len(target_indices):.4f}"
+    )
+    return num_found

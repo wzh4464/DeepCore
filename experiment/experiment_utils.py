@@ -427,6 +427,22 @@ def find_found_flipped_indices(score, flipped_indices, num_to_select=None):
     found_flipped_indices = [i for i in lowest_score_indices if i in flipped_indices]
     return found_flipped_indices
 
+def find_found_indices(score, target_indices, num_to_select=None):
+    """
+    根据分数和目标点索引，返回被找到的目标点索引列表。
+    score: tensor 或 numpy array，所有样本的分数。
+    target_indices: list 或 array，目标点的索引。
+    num_to_select: 选取最低分数的样本数，默认与target_indices数量一致。
+    返回：被找到的目标点索引列表。
+    """
+    if isinstance(score, torch.Tensor):
+        score = score.detach().cpu().numpy()
+    if num_to_select is None:
+        num_to_select = len(target_indices)
+    lowest_score_indices = np.argpartition(score, num_to_select)[:num_to_select]
+    found_indices = [i for i in lowest_score_indices if i in target_indices]
+    return found_indices
+
 def create_comparison_visualizations(results_dirname, save_path):
     """创建比较不同方法的可视化图表（使用PlotManager），自动从save_path读取最新timestamp"""
     # 自动查找最新的 early_detection_results_*.csv
