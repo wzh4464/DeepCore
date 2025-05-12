@@ -126,5 +126,34 @@
                 "--num_gpus", "1"
             ]
         },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Boundary Detection MNIST OTI",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "OTI",
+                "--exp", "boundary_detection",
+                "--num_exp", "1",
+                "--epochs", "1",
+                "--selection_epochs", "1",
+                "--data_path", "./data",
+                "--gpu", "0",
+                "--optimizer", "SGD",
+                "--lr", "0.1",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/boundary_detection",
+                "--num_boundary", "20",
+                "--num_scores", "100",
+                "--boundary_transform_intensity", "0.5",
+                "--oti_mode", "full",
+                "--oti_use_regularization",
+                "--oti_use_learning_rate",
+                "--num_gpus", "1"
+            ]
+        }
     ]
 }

@@ -6,15 +6,15 @@ import matplotlib.pyplot as plt
 
 # %%
 # 读取 CSV 文件
-scores = pd.read_csv("results/test_oti/average_score_2025-05-09_19-23-23.csv")
-selection_from = pd.read_csv("results/test_oti/flipped_selection_from_2025-05-09_19-47-56_0.csv")
-flipped_indices = pd.read_csv("results/test_oti/flipped_indices.csv", header=None)
+scores = pd.read_csv("results/boundary_detection/average_boundary_score_2025-05-12_16-25-17.csv")
+selection_from = pd.read_csv("results/boundary_detection/boundary_indices_2025-05-12_16-25-17_0.csv")
+flipped_indices = pd.read_csv("./results/boundary_detection/boundary_indices.csv", header=None)
 
 # %%
 # 预处理数据：重命名列名
 flipped_indices.columns = ["index"]
 scores.rename(columns={"0": "score"}, inplace=True)
-selection_from.rename(columns={"0": "index"}, inplace=True)
+selection_from.rename(columns={"boundary_indices": "index"}, inplace=True)
 
 # %%
 # 排序并获取 top N

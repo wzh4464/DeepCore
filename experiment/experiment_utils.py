@@ -427,6 +427,22 @@ def find_found_flipped_indices(score, flipped_indices, num_to_select=None):
     found_flipped_indices = [i for i in lowest_score_indices if i in flipped_indices]
     return found_flipped_indices
 
+def find_found_indices(score, target_indices, num_to_select=None):
+    """
+    根据分数和目标点索引，返回被找到的目标点索引列表。
+    score: tensor 或 numpy array，所有样本的分数。
+    target_indices: list 或 array，目标点的索引。
+    num_to_select: 选取最低分数的样本数，默认与target_indices数量一致。
+    返回：被找到的目标点索引列表。
+    """
+    if isinstance(score, torch.Tensor):
+        score = score.detach().cpu().numpy()
+    if num_to_select is None:
+        num_to_select = len(target_indices)
+    lowest_score_indices = np.argpartition(score, num_to_select)[:num_to_select]
+    found_indices = [i for i in lowest_score_indices if i in target_indices]
+    return found_indices
+
 def create_comparison_visualizations(results_dirname, save_path):
     """创建比较不同方法的可视化图表（使用PlotManager），自动从save_path读取最新timestamp"""
     # 自动查找最新的 early_detection_results_*.csv
@@ -587,3 +603,61 @@ class PlotManager:
 
     def close(self):
         self.plt.close(self.fig)
+
+@log_exception()
+def initialize_boundary_exp(args, seed):
+    """
+    初始化边界点实验
+    参数:
+        args: 命令行参数
+        seed: 随机种子
+    返回:
+        boundary_dataset: 包含边界点的数据集
+        test_loader: 测试数据加载器
+        boundary_indices: 边界点索引
+        permuted_indices: 打乱的索引
+        boundary_selection_from: 用于计算分数的索引
+    """
+    logger, mean, std, dst_train, dst_test = initialize_logging_and_datasets(args)
+    permuted_indices_path = os.path.join(args.save_path, "permuted_indices.csv")
+    if os.path.exists(permuted_indices_path):
+        permuted_indices = np.loadtxt(permuted_indices_path, delimiter=",", dtype=int)
+        logger.info(f"从 {permuted_indices_path} 加载打乱索引")
+    else:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+        permuted_indices = (
+            torch.randperm(len(dst_train), generator=generator).numpy().astype(int)
+        )
+        np.savetxt(permuted_indices_path, permuted_indices, delimiter=",", fmt="%d")
+        logger.info(f"保存打乱索引到 {permuted_indices_path}")
+    from liveval.datasets.boundary_dataset import BoundaryDataset
+    boundary_dataset = BoundaryDataset(
+        dst_train,
+        permuted_indices,
+        args.num_scores,
+        args.num_boundary,
+        args.dataset,
+        args.seed,
+        logger,
+        transform_intensity=getattr(args, 'boundary_transform_intensity', 0.5),
+    )
+    boundary_indices = boundary_dataset.get_boundary_indices()
+    boundary_selection_from = boundary_dataset.get_boundary_selection_from()
+    boundary_indices_path = os.path.join(args.save_path, "boundary_indices.csv")
+    np.savetxt(boundary_indices_path, boundary_indices, delimiter=",", fmt="%d")
+    logger.info(f"边界点索引已保存到 {boundary_indices_path}")
+    test_loader = torch.utils.data.DataLoader(
+        dst_test,
+        batch_size=args.selection_batch,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=True,
+    )
+    return (
+        boundary_dataset,
+        test_loader,
+        boundary_indices,
+        permuted_indices,
+        boundary_selection_from,
+    )

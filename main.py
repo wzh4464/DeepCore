@@ -411,8 +411,8 @@ def parse_args():
         "--exp",
         type=str,
         default="train_and_eval",
-        choices=["train_and_eval", "flip", "corrupt", "early_detection"],
-        help="Specify the experiment mode: 'train_and_eval', 'flip', 'corrupt', or 'early_detection'. Default is 'train_and_eval'.",
+        choices=["train_and_eval", "flip", "corrupt", "early_detection", "boundary_detection"],
+        help="指定实验模式：'train_and_eval', 'flip', 'corrupt', 'early_detection', 或 'boundary_detection'。",
     )
 
     parser.add_argument(
@@ -435,6 +435,20 @@ def parse_args():
         type=int,
         default=100,
         help="Number of scores to calculate for LOO",
+    )
+
+    parser.add_argument(
+        "--num_boundary",
+        type=int,
+        default=100,
+        help="边界点检测模式下生成的边界点数量",
+    )
+
+    parser.add_argument(
+        "--boundary_transform_intensity",
+        type=float,
+        default=0.5,
+        help="边界点变形强度，值越大变形越明显",
     )
 
     args = parser.parse_args()
@@ -671,7 +685,9 @@ def main():
     elif args.exp == "early_detection":
         from experiment import early_detection_comparison
         early_detection_comparison.run(args, checkpoint, start_exp, start_epoch)
-        # early_detection_comparison.plot_detection_rate_vs_epochs(args, checkpoint, start_exp, start_epoch)
+    elif args.exp == "boundary_detection":
+        from experiment import boundary_detection
+        boundary_detection.run(args, checkpoint, start_exp, start_epoch)
     else:
         logger.error(f"未知实验类型: {args.exp}")
         raise ValueError(f"未知实验类型: {args.exp}")
