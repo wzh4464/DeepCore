@@ -174,7 +174,7 @@ class GraNd(EarlyTrain):
         for self.cur_repeat in range(self.repeat):
             self.before_run()
             self.run()
-            self.random_seed = self.random_seed + 5
+            # self.random_seed = self.random_seed + 5
         # 计算平均norm
         self.norm_mean = torch.mean(self.norm_matrix, dim=1).cpu().detach().numpy()
         # 如果有scores_indices，则创建一个新的分数数组，只为特定的索引设置分数
@@ -189,3 +189,9 @@ class GraNd(EarlyTrain):
         else:
             # 如果没有scores_indices，返回所有分数
             return self.norm_mean
+
+    @override
+    def run(self):
+        self.random_seed = self.random_seed + self.cur_repeat
+        super().run()
+        self.random_seed = self.random_seed - self.cur_repeat
