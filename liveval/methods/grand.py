@@ -79,56 +79,70 @@ class GraNd(EarlyTrain):
 
     @override
     def finish_run(self):
-        self.model.embedding_recorder.record_embedding = (
-            True  # recording embedding vector
-        )
-
+        self.model.embedding_recorder.record_embedding = True
         self.model.eval()
 
         embedding_dim = self.model.get_last_layer().in_features
-        batch_loader = torch.utils.data.DataLoader(
-            self.dst_train,
-            batch_size=self.args.selection_batch,
-            num_workers=self.args.workers,
-        )
+        train_loader, train_indices = self._get_train_loader()
+        self.logger.info(f"Created training data loader")
+        self.train_iterator = iter(train_loader)
         sample_num = self.n_train
 
-        for i, (input, targets, _) in enumerate(batch_loader):
+        # 初始化所有样本的norm为NaN
+        self.norm_matrix.fill_(float('nan'))
+
+        if self.scores_indices:
+            print(f"[GraNd] 只为{len(self.scores_indices)}个特定样本计算分数")
+
+        for i, (input, targets, true_idx) in enumerate(train_loader):
+            batch_indices = true_idx.numpy() if hasattr(true_idx, 'numpy') else true_idx
+            # 跳过不相关的批次
+            if self.scores_indices and not any(idx in self.scores_indices for idx in batch_indices):
+                continue
+
             self.model_optimizer.zero_grad()
             outputs = self.model(input.to(self.args.device))
             loss = self.criterion(
                 outputs.requires_grad_(True), targets.to(self.args.device)
             ).sum()
             batch_num = targets.shape[0]
+
             with torch.no_grad():
                 bias_parameters_grads = torch.autograd.grad(loss, outputs)[0]
-                self.norm_matrix[
-                    i
-                    * self.args.selection_batch : min(
-                        (i + 1) * self.args.selection_batch, sample_num
-                    ),
-                    self.cur_repeat,
-                ] = torch.norm(
-                    torch.cat(
-                        [
-                            bias_parameters_grads,
-                            (
-                                self.model.embedding_recorder.embedding.view(
-                                    batch_num, 1, embedding_dim
-                                ).repeat(1, self.args.num_classes, 1)
-                                * bias_parameters_grads.view(
-                                    batch_num, self.args.num_classes, 1
-                                ).repeat(1, 1, embedding_dim)
-                            ).view(batch_num, -1),
-                        ],
+                for j in range(batch_num):
+                    sample_idx = batch_indices[j].item() if hasattr(batch_indices[j], 'item') else batch_indices[j]
+                    # 只为特定样本计算分数
+                    if self.scores_indices and sample_idx not in self.scores_indices:
+                        continue
+                    # 找到样本在self.norm_matrix中的索引
+                    # if hasattr(self.dst_train, 'indices'):
+                    #     try:
+                    #         matrix_idx = list(self.dst_train.indices).index(sample_idx)
+                    #     except ValueError:
+                    #         continue
+                    # else:
+                    matrix_idx = sample_idx
+                    # 计算并存储norm
+                    self.norm_matrix[matrix_idx, self.cur_repeat] = torch.norm(
+                        torch.cat(
+                            [
+                                bias_parameters_grads[j:j+1],
+                                (
+                                    self.model.embedding_recorder.embedding[j:j+1].view(
+                                        1, 1, embedding_dim
+                                    ).repeat(1, self.args.num_classes, 1)
+                                    * bias_parameters_grads[j:j+1].view(
+                                        1, self.args.num_classes, 1
+                                    ).repeat(1, 1, embedding_dim)
+                                ).view(1, -1),
+                            ],
+                            dim=1,
+                        ),
                         dim=1,
-                    ),
-                    dim=1,
-                    p=2,
-                )
+                        p=2,
+                    )
 
         self.model.train()
-
         self.model.embedding_recorder.record_embedding = False
 
     @override
@@ -164,31 +178,18 @@ class GraNd(EarlyTrain):
             if hasattr(self.dst_train, "get_flipped_selection_from")
             else []
         )
-        # 如果有scores_indices，则打印信息
         if self.scores_indices:
-            print(f"[GraNd] 为{len(self.scores_indices)}个特定样本计算分数")
-        # 计算标准GraNd分数
-        self.norm_matrix = torch.zeros(
-            [self.n_train, self.repeat], requires_grad=False
+            print(f"[GraNd] 将为{len(self.scores_indices)}个特定样本计算分数")
+        # 初始化为NaN
+        self.norm_matrix = torch.full(
+            [self.n_train, self.repeat], float('nan'), requires_grad=False
         ).to(self.args.device)
         for self.cur_repeat in range(self.repeat):
             self.before_run()
             self.run()
-            # self.random_seed = self.random_seed + 5
-        # 计算平均norm
-        self.norm_mean = torch.mean(self.norm_matrix, dim=1).cpu().detach().numpy()
-        # 如果有scores_indices，则创建一个新的分数数组，只为特定的索引设置分数
-        if self.scores_indices:
-            # 创建全为nan的数组
-            filtered_scores = np.full(len(self.dst_train.indices), np.nan)
-            # 只为scores_indices中的索引填充实际分数
-            for i, idx in enumerate(self.dst_train.indices):
-                if idx in self.scores_indices:
-                    filtered_scores[i] = self.norm_mean[i]
-            return filtered_scores
-        else:
-            # 如果没有scores_indices，返回所有分数
-            return self.norm_mean
+        # 计算平均norm（忽略NaN值）
+        self.norm_mean = torch.nanmean(self.norm_matrix, dim=1).cpu().detach().numpy()
+        return self.norm_mean
 
     @override
     def run(self):
