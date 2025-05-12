@@ -19,26 +19,55 @@
         {
             "type": "debugpy",
             "request": "launch",
-            "name": "Flip MNIST TracIn",
+            "name": "Flip MNIST loo",
             "program": "${workspaceFolder}/main.py",
             "console": "internalConsole",
             "args": [
                 "--dataset", "MNIST",
                 "--model", "LeNet",
-                "--selection", "TracIn",
+                "--selection", "loo",
                 "--num_exp", "1",
                 "--num_eval", "1",
                 "--epochs", "1",
                 "--selection_epochs", "1",
                 "--data_path", "./data",
-                "--gpu", "0",
+                "--gpu", "2",
                 "--optimizer", "SGD",
-                "--lr", "0.1",
+                "--lr", "0.05",
                 "--scheduler", "CosineAnnealingLR",
-                "--save_path", "./results/test_tracin",
+                "--save_path", "./results/test_loo",
                 "--exp", "flip",
                 "--num_flip", "10",
-                "--workers", "1"
+                "--workers", "1",
+                "--seed", "42",
+                "--num_gpus", "1"
+            ]
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Flip MNIST GraNd",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "GraNd",
+                "--num_exp", "1",
+                "--num_eval", "1",
+                "--epochs", "1",
+                "--selection_epochs", "1",
+                "--data_path", "./data",
+                "--gpu", "2",
+                "--optimizer", "SGD",
+                "--lr", "0.05",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/test_GraNd",
+                "--exp", "flip",
+                "--num_flip", "10",
+                "--workers", "4",
+                "--seed", "42",
+                "--num_gpus", "1"
             ]
         },
         {
@@ -70,6 +99,32 @@
                 "--oti_mode", "full"
             ]
         },
-
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Flip MNIST OTI early_detection",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "OTI",
+                "--num_exp", "1",
+                "--num_eval", "1",
+                "--epochs", "1",
+                "--selection_epochs", "1",
+                "--data_path", "./data",
+                "--gpu", "2",
+                "--optimizer", "SGD",
+                "--lr", "0.05",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/test_epoch",
+                "--exp", "early_detection",
+                "--num_flip", "10",
+                "--workers", "16",
+                "--seed", "42",
+                "--num_gpus", "1"
+            ]
+        },
     ]
 }
