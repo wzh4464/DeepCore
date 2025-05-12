@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 10:21:55 am
+# Last Modified: Monday, 12th May 2025 11:17:00 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -97,7 +97,7 @@ def initialize_flip_exp(args, seed):
         )
         np.savetxt(permuted_indices_path, permuted_indices, delimiter=",", fmt="%d")
         logger.info(f"Saved permuted indices to {permuted_indices_path}")
-    if args.exp == "flip":
+    if args.exp in ["flip", "early_detection"]:
         flipped_dataset = FlippedDataset(
             dst_train,
             permuted_indices,
