@@ -20,3 +20,6 @@ cache/
 
 # 忽略 .gitignore 自身（可选，通常不需要）
 # .gitignore
+
+# 忽略所有 bak
+*.bak
