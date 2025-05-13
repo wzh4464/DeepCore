@@ -508,9 +508,9 @@ class AD_OTI(OTI):
             )
 
             if self.args.log_level == "DEBUG":
-                # save to "savepath/L_{timestamps}.csv"
+                # save to "savepath/L.csv"
                 with open(
-                    f"{self.args.save_path}/L_{self.args.timestamp}.csv", "a"
+                    f"{self.args.save_path}/L.csv", "a"
                 ) as f:
                     # if 0, 2 then write arguments
                     if current_epoch == 0 and current_step == 2:

@@ -445,16 +445,16 @@ def find_found_indices(score, target_indices, num_to_select=None):
 
 def create_comparison_visualizations(results_dirname, save_path):
     """创建比较不同方法的可视化图表（使用PlotManager），自动从save_path读取最新timestamp"""
-    # 自动查找最新的 early_detection_results_*.csv
+    # 自动查找最新的 early_detection_results.csv
     import pandas as pd
     results_df = pd.read_csv(results_dirname, index_col=False)
-    result_files = glob.glob(f"{save_path}/early_detection_results_*.csv")
+    result_files = glob.glob(f"{save_path}/early_detection_results.csv")
     if not result_files:
-        raise FileNotFoundError(f"未找到 {save_path}/early_detection_results_*.csv 文件")
+        raise FileNotFoundError(f"未找到 {save_path}/early_detection_results.csv 文件")
     # 提取所有 timestamp
     timestamps = []
     for f in result_files:
-        # 文件名格式 early_detection_results_{timestamp}.csv
+        # 文件名格式 early_detection_results.csv
         base = os.path.basename(f)
         try:
             ts = base.split("early_detection_results_")[1].split(".csv")[0]

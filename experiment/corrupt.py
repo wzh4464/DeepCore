@@ -43,5 +43,5 @@ def run(args, checkpoint, start_exp, start_epoch):
         _, label, _ = corrupted_train_dataset.dataset[idx]
         labels.append(label)
     df["label"] = labels
-    df.to_csv(f"{args.save_path}/average_corrupt_score_{args.timestamp}.csv", index=False)
+    df.to_csv(f"{args.save_path}/average_corrupt_score.csv", index=False)
     count_flipped_in_lowest_scores(logger, args, corrupted_indices, average_score) 

@@ -57,7 +57,7 @@ def run(args, checkpoint, start_exp, start_epoch):
         # 统计被找到的反转点（用新工具函数）
         found_flipped_indices = find_found_flipped_indices(score, flipped_indices)
         pd.DataFrame({"found_flipped_indices": found_flipped_indices}).to_csv(
-            f"{args.save_path}/found_flipped_indices_{args.timestamp}_{exp}.csv",
+            f"{args.save_path}/found_flipped_indices_{exp}.csv",
             index=False,
         )
 
@@ -103,10 +103,10 @@ def run(args, checkpoint, start_exp, start_epoch):
 
         # 保存loss/accuracy
         pd.DataFrame({"step_loss": step_losses}).to_csv(
-            f"{args.save_path}/step_losses_{args.timestamp}_{exp}.csv", index=False
+            f"{args.save_path}/step_losses_{exp}.csv", index=False
         )
         pd.DataFrame({"epoch_accuracy": epoch_accuracies}).to_csv(
-            f"{args.save_path}/epoch_accuracies_{args.timestamp}_{exp}.csv", index=False
+            f"{args.save_path}/epoch_accuracies_{exp}.csv", index=False
         )
     average_score = torch.mean(torch.stack(scores), dim=0)
     df = pd.DataFrame(average_score.detach().numpy())

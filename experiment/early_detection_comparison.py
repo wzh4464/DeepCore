@@ -164,7 +164,7 @@ def run(args, checkpoint, start_exp, start_epoch):
 
     # 保存总结果
     results_df = pd.DataFrame(results)
-    results_dirname = f"{args.save_path}/early_detection_results_{args.timestamp}.csv"
+    results_dirname = f"{args.save_path}/early_detection_results.csv"
     results_df.to_csv(results_dirname, index=False)
 
     # 生成可视化图表
@@ -183,12 +183,12 @@ def plot_detection_rate_vs_epochs(args, checkpoint, start_exp, start_epoch):
     logger.info(f"Running plot detection rate vs epochs")
 
     # 读取结果数据
-    # results_dirname = f"{args.save_path}/early_detection_results_{args.timestamp}.csv"
+    # results_dirname = f"{args.save_path}/early_detection_results.csv"
     results_dirname_prefix = f"{args.save_path}/early_detection_results_"
-    # 自动查找最新的 early_detection_results_*.csv
-    result_files = glob.glob(f"{args.save_path}/early_detection_results_*.csv")
+    # 自动查找最新的 early_detection_results.csv
+    result_files = glob.glob(f"{args.save_path}/early_detection_results.csv")
     if not result_files:
-        raise FileNotFoundError(f"未找到 {args.save_path}/early_detection_results_*.csv 文件")
+        raise FileNotFoundError(f"未找到 {args.save_path}/early_detection_results.csv 文件")
     # 提取所有 timestamp
     timestamps = []
     for f in result_files:
@@ -203,7 +203,7 @@ def plot_detection_rate_vs_epochs(args, checkpoint, start_exp, start_epoch):
     if len(timestamps) > 1:
         warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
     timestamp = max(timestamps)
-    results_dirname = f"{args.save_path}/early_detection_results_{timestamp}.csv"
+    results_dirname = f"{args.save_path}/early_detection_results.csv"
 
     create_comparison_visualizations(results_dirname, args.save_path)
 
