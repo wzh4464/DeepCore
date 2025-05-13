@@ -54,7 +54,7 @@ def run_task(task):
     save_path = f"{experiment['save_path_base']}/nf{num_flip}_lr{lr}_seed{seed}"
     cmd = (
         f"{base_cmd} --selection {experiment['selection']} {experiment['extra_args']} "
-        f"--gpu {gpu} --lr {lr} --save_path {save_path} "
+        f"--gpu {gpu} --lr {lr} --selection_lr {lr} --save_path {save_path} "
         f"--seed {seed} --num_flip {num_flip}"
     )
     print(f"开始任务: {experiment['name']} - GPU {gpu}, LR {lr}, Num Flip {num_flip}, Seed {seed}")
@@ -82,7 +82,7 @@ def run_experiment(experiment):
         task_queue.put(task)
 
     num_tasks = len(all_tasks)
-    max_threads = num_tasks / len(gpus)
+    max_threads = num_tasks // len(gpus)
 
     def worker(gpu_id):
         while not task_queue.empty():
