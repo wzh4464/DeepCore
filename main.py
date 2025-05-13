@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 13th May 2025 10:05:18 am
+# Last Modified: Tuesday, 13th May 2025 10:23:08 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -411,8 +411,8 @@ def parse_args():
         "--exp",
         type=str,
         default="train_and_eval",
-        choices=["train_and_eval", "flip", "corrupt", "early_detection", "boundary_detection"],
-        help="指定实验模式：'train_and_eval', 'flip', 'corrupt', 'early_detection', 或 'boundary_detection'。",
+        choices=["train_and_eval", "flip", "corrupt", "early_detection", "boundary_detection", "tracin_order"],
+        help="指定实验模式：'train_and_eval', 'flip', 'corrupt', 'early_detection', 'boundary_detection', 或 'tracin_order'。",
     )
 
     parser.add_argument(
@@ -689,6 +689,9 @@ def main():
     elif args.exp == "boundary_detection":
         from experiment import boundary_detection
         boundary_detection.run(args, checkpoint, start_exp, start_epoch)
+    elif args.exp == "tracin_order":
+        from experiment import tracin_order_experiment
+        tracin_order_experiment.run(args, checkpoint, start_exp, start_epoch)
     else:
         logger.error(f"未知实验类型: {args.exp}")
         raise ValueError(f"未知实验类型: {args.exp}")
