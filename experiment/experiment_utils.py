@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 11:17:00 am
+# Last Modified: Tuesday, 13th May 2025 9:52:04 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -465,8 +465,6 @@ def create_comparison_visualizations(results_dirname, save_path):
         raise ValueError("未能从文件名中提取到 timestamp")
     if len(timestamps) > 1:
         warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
-    timestamp = max(timestamps)
-
     methods = results_df["method"].unique()
 
     # 1. 检测率与epoch数的关系
@@ -474,11 +472,13 @@ def create_comparison_visualizations(results_dirname, save_path):
     for method in methods:
         method_data = results_df[results_df["method"] == method]
         pm1.plot(method_data["epochs"], method_data["detection_rate"], label=method)
-    pm1.set_xlabel("Number of Training Epochs")
-    pm1.set_ylabel("Detection Rate")
-    pm1.set_title("Flipped Sample Detection Rate vs Training Epochs")
-    pm1.add_legend()
-    pm1.add_grid()
+    set_plot_labels_and_legend(
+        pm1,
+        "Number of Training Epochs",
+        "Detection Rate",
+        "Flipped Sample Detection Rate vs Training Epochs",
+    )
+    timestamp = max(timestamps)
     pm1.savefig(f"{save_path}/detection_rate_vs_epochs_{timestamp}.png")
     pm1.close()
 
@@ -488,11 +488,12 @@ def create_comparison_visualizations(results_dirname, save_path):
         method_data = results_df[results_df["method"] == method]
         accuracy_improvement = method_data["accuracy_after"] - method_data["accuracy_before"]
         pm2.plot(method_data["epochs"], accuracy_improvement, label=method)
-    pm2.set_xlabel("Number of Training Epochs")
-    pm2.set_ylabel("Accuracy Improvement")
-    pm2.set_title("Accuracy Improvement after Removing Detected Samples vs Training Epochs")
-    pm2.add_legend()
-    pm2.add_grid()
+    set_plot_labels_and_legend(
+        pm2,
+        "Number of Training Epochs",
+        "Accuracy Improvement",
+        "Accuracy Improvement after Removing Detected Samples vs Training Epochs",
+    )
     pm2.savefig(f"{save_path}/accuracy_improvement_vs_epochs_{timestamp}.png")
     pm2.close()
 
@@ -502,13 +503,21 @@ def create_comparison_visualizations(results_dirname, save_path):
         method_data = results_df[results_df["method"] == method]
         accuracy_improvement = method_data["accuracy_after"] - method_data["accuracy_before"]
         pm3.scatter(method_data["detection_rate"], accuracy_improvement, label=method)
-    pm3.set_xlabel("Detection Rate")
-    pm3.set_ylabel("Accuracy Improvement")
-    pm3.set_title("Accuracy Improvement vs Detection Rate")
-    pm3.add_legend()
-    pm3.add_grid()
+    set_plot_labels_and_legend(
+        pm3,
+        "Detection Rate",
+        "Accuracy Improvement",
+        "Accuracy Improvement vs Detection Rate",
+    )
     pm3.savefig(f"{save_path}/accuracy_vs_detection_{timestamp}.png")
     pm3.close()
+
+def set_plot_labels_and_legend(plot_manager, xlabel, ylabel, title):
+    plot_manager.set_xlabel(xlabel)
+    plot_manager.set_ylabel(ylabel)
+    plot_manager.set_title(title)
+    plot_manager.add_legend()
+    plot_manager.add_grid()
 
 class PlotManager:
     """
@@ -565,6 +574,47 @@ class PlotManager:
             self.label_handles.append(label)
         return sc
 
+    def plot_with_std(self, x, y_means, y_stds, label=None, color=None, linewidth=4, 
+                      marker='o', alpha=0.2, fill_between=True, **kwargs):
+        """
+        绘制带有标准差区域的曲线
+        
+        参数:
+            x: x轴数据
+            y_means: y轴平均值数据
+            y_stds: y轴标准差数据
+            label: 图例标签
+            color: 线条颜色
+            linewidth: 线条宽度
+            marker: 数据点标记
+            alpha: 标准差区域透明度
+            fill_between: 是否填充标准差区域
+            **kwargs: 其他plot参数
+        
+        返回:
+            matplotlib Line2D对象
+        """
+        import numpy as np
+        
+        if color is None:
+            color = self.color_list[self.color_idx % len(self.color_list)]
+            self.color_idx += 1
+            
+        # 绘制主曲线
+        line = self.plot(x, y_means, label=label, color=color, 
+                         linewidth=linewidth, marker=marker, **kwargs)
+        
+        # 绘制标准差区域
+        if fill_between and y_stds is not None:
+            # 确保下界不小于0
+            lower_bound = np.maximum(0, np.array(y_means) - np.array(y_stds))
+            upper_bound = np.array(y_means) + np.array(y_stds)
+            
+            self.ax.fill_between(x, lower_bound, upper_bound, 
+                                alpha=alpha, color=color)
+        
+        return line
+
     def set_xlabel(self, label):
         self.ax.set_xlabel(label)
 
@@ -603,6 +653,13 @@ class PlotManager:
 
     def close(self):
         self.plt.close(self.fig)
+
+    def set_xticks_int(self):
+        """
+        设置x轴刻度为整数。
+        """
+        import matplotlib.ticker as ticker
+        self.ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
 @log_exception()
 def initialize_boundary_exp(args, seed):

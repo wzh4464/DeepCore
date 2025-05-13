@@ -93,7 +93,7 @@ sbatch slurm_job.sh \
 
 ## Project Structure
 
-```
+```bash
 .
 ├── main.py              # Main entry point
 ├── liveval/
@@ -119,3 +119,41 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 This implementation builds upon the original OTI method and extends it with adaptive reference points for time-aware data valuation.
+
+## 实验结果文件说明
+
+以 `python -m script.early_detection_experiment` 运行早期检测实验为例，所有结果将自动保存在 `results/early_detection/` 目录下，按方法（如 grand、influence_function、oti）和参数（如 nf、lr、seed）分文件夹组织。例如：
+
+```bash
+results/early_detection/grand/nf10_lr0.05_seed0/
+results/early_detection/oti/nf20_lr0.05_seed3/
+results/early_detection/influence_function/nf40_lr0.05_seed7/
+```
+
+每个实验文件夹下包含如下类型的结果文件：
+
+- `early_detection_results_时间戳.csv`：主结果表，记录每轮检测的主要指标（如检测率、准确率等）。
+- `accuracy_vs_detection_时间戳.png`、`accuracy_improvement_vs_epochs_时间戳.png`、`detection_rate_vs_epochs_时间戳.png`：实验过程和结果的可视化图表。
+- `[方法名]_scores_epochsX_0.csv`：每个 epoch 的样本分数（如 OTI_scores_epochs5_0.csv、GraNd_scores_epochs5_0.csv）。
+- `[方法名]_epoch_accuracies_epochsX_0.csv`：每个 epoch 的准确率。
+- `[方法名]_step_losses_epochsX_0.csv`：每步的 loss 记录。
+- `[方法名]_found_flipped_indices_epochsX_0.csv`：每轮检测中被 flip 的样本索引。
+- `flipped_indices.csv`、`flipped_selection_from.csv`：最终被 flip 的样本索引及来源。
+- `permuted_indices.csv`：样本顺序的置换信息。
+- `initial_params.pt`、`best_params.pkl`、`influence_model.pt` 等：模型参数快照。
+- `epoch_0_data.pkl`：首轮数据快照。
+
+不同 selection 方法（如 OTI、GraNd、influence_function）均会生成上述结构的结果文件，便于横向对比。
+
+### 结果文件举例
+
+以 `results/early_detection/oti/nf10_lr0.05_seed0/` 为例，主要文件说明如下：
+
+- `early_detection_results_2025-05-12_23-07-41.csv`：主结果表，含各 epoch 检测率、准确率等。
+- `OTI_scores_epochs5_0.csv`：第5个 epoch 的 OTI 分数。
+- `OTI_found_flipped_indices_epochs5_0.csv`：第5个 epoch 检测到的 flip 样本索引。
+- `accuracy_vs_detection_2025-05-12_23-07-41.png`：准确率与检测率关系图。
+- `initial_params.pt`：初始模型参数。
+- `flipped_indices.csv`：最终 flip 样本索引。
+
+其余方法（如 GraNd、influence_function）命名方式类似。
