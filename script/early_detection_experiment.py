@@ -88,7 +88,7 @@ def run_experiment(experiment):
         while not task_queue.empty():
             try:
                 _, lr, num_flip, seed, exp = task_queue.get_nowait()
-            except:
+            except Exception:
                 break
             task = (gpu_id, lr, num_flip, seed, exp)
             run_task(task)
