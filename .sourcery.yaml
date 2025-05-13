@@ -1,3 +1,4 @@
 rule_settings:
   disable:
+  - inline-immediately-returned-variable
   - remove-redundant-fstring
