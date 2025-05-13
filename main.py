@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 10:29:26 am
+# Last Modified: Tuesday, 13th May 2025 10:05:18 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -510,7 +510,7 @@ def run_experiment(args, checkpoint, start_exp, start_epoch):
             start_epoch = 0
             checkpoint = {}
             sleep(2)
-    elif args.exp == "flip" or args.exp == "corrupt":
+    elif args.exp in ["flip", "corrupt"]:
         _export_flipped_scores_summary(logger, args, start_exp, checkpoint)
 
 
