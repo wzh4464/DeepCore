@@ -452,19 +452,19 @@ def create_comparison_visualizations(results_dirname, save_path):
     if not result_files:
         raise FileNotFoundError(f"未找到 {save_path}/early_detection_results.csv 文件")
     # 提取所有 timestamp
-    timestamps = []
-    for f in result_files:
-        # 文件名格式 early_detection_results.csv
-        base = os.path.basename(f)
-        try:
-            ts = base.split("early_detection_results_")[1].split(".csv")[0]
-            timestamps.append(ts)
-        except Exception:
-            continue
-    if not timestamps:
-        raise ValueError("未能从文件名中提取到 timestamp")
-    if len(timestamps) > 1:
-        warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
+    # timestamps = []
+    # for f in result_files:
+    #     # 文件名格式 early_detection_results.csv
+    #     base = os.path.basename(f)
+    #     try:
+    #         ts = base.split("early_detection_results_")[1].split(".csv")[0]
+    #         timestamps.append(ts)
+    #     except Exception:
+    #         continue
+    # if not timestamps:
+    #     raise ValueError("未能从文件名中提取到 timestamp")
+    # if len(timestamps) > 1:
+    #     warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
     methods = results_df["method"].unique()
 
     # 1. 检测率与epoch数的关系
@@ -478,8 +478,8 @@ def create_comparison_visualizations(results_dirname, save_path):
         "Detection Rate",
         "Flipped Sample Detection Rate vs Training Epochs",
     )
-    timestamp = max(timestamps)
-    pm1.savefig(f"{save_path}/detection_rate_vs_epochs_{timestamp}.png")
+    # timestamp = max(timestamps)
+    pm1.savefig(f"{save_path}/detection_rate_vs_epochs.png")
     pm1.close()
 
     # 2. 准确率提升与epoch数的关系
@@ -494,7 +494,7 @@ def create_comparison_visualizations(results_dirname, save_path):
         "Accuracy Improvement",
         "Accuracy Improvement after Removing Detected Samples vs Training Epochs",
     )
-    pm2.savefig(f"{save_path}/accuracy_improvement_vs_epochs_{timestamp}.png")
+    pm2.savefig(f"{save_path}/accuracy_improvement_vs_epochs.png")
     pm2.close()
 
     # 3. 检测率与准确率提升的关系
@@ -509,7 +509,7 @@ def create_comparison_visualizations(results_dirname, save_path):
         "Accuracy Improvement",
         "Accuracy Improvement vs Detection Rate",
     )
-    pm3.savefig(f"{save_path}/accuracy_vs_detection_{timestamp}.png")
+    pm3.savefig(f"{save_path}/accuracy_vs_detection.png")
     pm3.close()
 
 def set_plot_labels_and_legend(plot_manager, xlabel, ylabel, title):

@@ -190,19 +190,19 @@ def plot_detection_rate_vs_epochs(args, checkpoint, start_exp, start_epoch):
     if not result_files:
         raise FileNotFoundError(f"未找到 {args.save_path}/early_detection_results.csv 文件")
     # 提取所有 timestamp
-    timestamps = []
-    for f in result_files:
-        base = os.path.basename(f)
-        try:
-            ts = base.split("early_detection_results_")[1].split(".csv")[0]
-            timestamps.append(ts)
-        except Exception:
-            continue
-    if not timestamps:
-        raise ValueError("未能从文件名中提取到 timestamp")
-    if len(timestamps) > 1:
-        warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
-    timestamp = max(timestamps)
+    # timestamps = []
+    # for f in result_files:
+    #     base = os.path.basename(f)
+    #     try:
+    #         ts = base.split("early_detection_results_")[1].split(".csv")[0]
+    #         timestamps.append(ts)
+    #     except Exception:
+    #         continue
+    # if not timestamps:
+    #     raise ValueError("未能从文件名中提取到 timestamp")
+    # if len(timestamps) > 1:
+    #     warnings.warn(f"检测到多个 timestamp: {timestamps}，将使用最新的 {max(timestamps)}")
+    # timestamp = max(timestamps)
     results_dirname = f"{args.save_path}/early_detection_results.csv"
 
     create_comparison_visualizations(results_dirname, args.save_path)
