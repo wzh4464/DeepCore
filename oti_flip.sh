@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=flip_OTI_Adult
+#SBATCH --job-name=flip_OTI_MNIST
 #SBATCH --output=logs/epochs_log/%x_%j.log
 #SBATCH --error=logs/epochs/%x_%j_err.log
 #SBATCH --ntasks=1

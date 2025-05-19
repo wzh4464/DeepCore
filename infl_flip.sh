@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=flip_GraNd_MNIST
+#SBATCH --job-name=flip_influence_function_MNIST
 #SBATCH --output=logs/epochs_log/%x_%j.log
 #SBATCH --error=logs/epochs/%x_%j_err.log
 #SBATCH --ntasks=1
@@ -48,14 +48,14 @@ cd /home/zihan/codes/DeepCore
 # Set the SLURM experiment parameters
 gpu_list="0"
 experiment_name="flip_MNIST_${SLURM_JOB_ID}"
-save_path="results/flip_GraNd_${SLURM_JOB_ID}_${numflip}"
+save_path="results/flip_influence_function_${SLURM_JOB_ID}_${numflip}"
 
 # Build the command
 cmd=(
     "$PYTHON" "main.py"
     "--dataset" "MNIST"
     "--model" "LeNet"
-    "--selection" "GraNd"
+    "--selection" "influence_function"
     "--exp" "flip"
     "--workers" "4"
     "--num_exp" "1"
