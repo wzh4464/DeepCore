@@ -12,13 +12,20 @@ import os
 import time
 import subprocess
 import threading
+import argparse
 from queue import Queue
 
-# 配置参数
-gpus = [0, 1, 2, 3]
-lrs = [0.05]  # 只用一个学习率
-num_flips = [10, 20, 30, 40]
-seeds = list(range(8))  # 0-7
+def parse_args():
+    parser = argparse.ArgumentParser(description='早期检测实验')
+    parser.add_argument('--gpus', type=str, default='0,1,2',
+                      help='要使用的GPU ID列表，用逗号分隔，例如 "0,1,2" 或 "0,3"')
+    parser.add_argument('--lrs', type=str, default='0.0005',
+                      help='学习率列表，用逗号分隔，例如 "0.0005" 或 "0.0001,0.0005"')
+    parser.add_argument('--num_flips', type=str, default='10,20,30,40',
+                      help='翻转数量列表，用逗号分隔，例如 "10,20,30,40"')
+    parser.add_argument('--seeds', type=str, default='0,1,2,3,4,5,6,7',
+                      help='随机种子列表，用逗号分隔，例如 "0,1,2,3,4,5,6,7"')
+    return parser.parse_args()
 
 # 实验配置
 experiments = [
@@ -44,7 +51,7 @@ experiments = [
 
 # 基础命令
 base_cmd = (
-    "/home/jie/DeepCore/.venv/bin/python -m main --dataset MNIST --model LeNet --exp early_detection "
+    "python -m main --dataset MNIST --model LeNet --exp early_detection "
     "--num_exp 1 --num_eval 1 --epochs 5 --selection_epochs 5 --data_path ./data "
     "--optimizer SGD --scheduler CosineAnnealingLR --num_gpus 1 --workers 1 "
 )
@@ -64,7 +71,7 @@ def run_task(task):
     else:
         print(f"任务完成: {experiment['name']} - GPU {gpu}, LR {lr}, Num Flip {num_flip}, Seed {seed}")
 
-def run_experiment(experiment):
+def run_experiment(experiment, gpus, lrs, num_flips, seeds):
     print(f"\n{'='*80}")
     print(f"开始运行 {experiment['name']} 早期检测实验")
     print(f"{'='*80}\n")
@@ -107,11 +114,24 @@ def run_experiment(experiment):
     print(f"\n{experiment['name']} 早期检测实验完成！")
 
 if __name__ == "__main__":
+    args = parse_args()
+    
+    # 解析命令行参数
+    gpus = [int(gpu.strip()) for gpu in args.gpus.split(',')]
+    lrs = [float(lr.strip()) for lr in args.lrs.split(',')]
+    num_flips = [int(nf.strip()) for nf in args.num_flips.split(',')]
+    seeds = [int(seed.strip()) for seed in args.seeds.split(',')]
+    
+    print(f"使用 GPU: {gpus}")
+    print(f"学习率: {lrs}")
+    print(f"翻转数量: {num_flips}")
+    print(f"随机种子: {seeds}")
+    
     start_time = time.time()
 
     # 依次运行每个实验
     for experiment in experiments:
-        run_experiment(experiment)
+        run_experiment(experiment, gpus, lrs, num_flips, seeds)
 
     end_time = time.time()
     total_time = end_time - start_time
