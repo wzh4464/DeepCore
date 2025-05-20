@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 13th May 2025 10:23:08 am
+# Last Modified: Tuesday, 20th May 2025 11:12:18 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -453,6 +453,8 @@ def parse_args():
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        args.device = "mps"
 
     # add args.timestamp
     args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -648,23 +650,32 @@ def main():
         gpu_count = torch.cuda.device_count()
         gpu_info = [f"GPU-{i}: {torch.cuda.get_device_name(i)}" for i in range(gpu_count)]
         logger.info(f"可用物理GPU列表: {gpu_info}")
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        logger.info("检测到 MPS 设备可用，将使用 MPS")
     else:
-        logger.info("未检测到可用GPU，使用CPU模式")
+        logger.info("未检测到可用GPU或MPS，使用CPU模式")
 
     # 强制物理GPU设定
     if args.gpu is not None and torch.cuda.is_available():
         torch.cuda.set_device(args.gpu[0])
         logger.info(f"当前进程已强制使用物理GPU: {args.gpu[0]} ({torch.cuda.get_device_name(args.gpu[0])})")
+    elif args.device == "mps":
+        logger.info("当前进程将使用 MPS 设备")
     else:
-        logger.info("未指定GPU或无GPU可用，使用CPU")
+        logger.info("未指定GPU或无GPU/MPS可用，使用CPU")
 
     # 用参数初始化所有随机种子
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(args.seed)
-        torch.cuda.manual_seed_all(args.seed)
+    if args.device == "cuda":
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(args.seed)
+            torch.cuda.manual_seed_all(args.seed)
+    elif args.device == "mps":
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            torch.mps.manual_seed(args.seed)
+
     cudnn.deterministic = True
     cudnn.benchmark = False
     logger.info(f"所有随机种子已初始化为: {args.seed}")
