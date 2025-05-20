@@ -52,7 +52,7 @@ experiments = [
 # 基础命令
 base_cmd = (
     "python -m main --dataset MNIST --model LeNet --exp early_detection "
-    "--num_exp 1 --num_eval 1 --epochs 5 --selection_epochs 5 --data_path ./data "
+    "--num_exp 1 --num_eval 1 --data_path ./data "
     "--optimizer SGD --scheduler CosineAnnealingLR --num_gpus 1 --workers 1 "
 )
 
