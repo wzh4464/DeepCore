@@ -154,6 +154,17 @@
                 "--oti_use_learning_rate",
                 "--num_gpus", "1"
             ]
+        },
+        {
+            // python -m script.early_detection_experiment
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Early Detection MNIST script",
+            "module": "script.early_detection_experiment",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python"
         }
     ]
 }

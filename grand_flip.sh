@@ -20,6 +20,10 @@ while [[ $# -gt 0 ]]; do
             seed="$2"
             shift 2
             ;;
+        -e|--epochs)
+            epochs="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown parameter: $1"
             exit 1
@@ -59,11 +63,12 @@ cmd=(
     "--exp" "flip"
     "--workers" "4"
     "--num_exp" "1"
-    "--epochs" "5"
-    "--selection_epochs" "5"
+    "--epochs" "$epochs"
+    "--selection_epochs" "$epochs"
     "--data_path" "./data"
     "--optimizer" "SGD"
-    "--lr" "0.001"
+    "--lr" "0.0000001"
+    "--selection_lr" "0.0000001"
     "--scheduler" "CosineAnnealingLR"
     "--save_path" "$save_path"
     "--num_gpus" "1"
