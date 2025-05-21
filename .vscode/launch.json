@@ -67,6 +67,37 @@
                 "--num_gpus", "1"
             ]
         },
-
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Flip MNIST AD_OTI",
+            "program": "${workspaceFolder}/main.py",
+            "console": "internalConsole",
+            "args": [
+                "--dataset", "MNIST",
+                "--model", "LeNet",
+                "--selection", "AD_OTI",
+                "--num_exp", "1",
+                "--epochs", "5",
+                "--selection_epochs", "5",
+                "--data_path", "./data",
+                "--gpu", "2",
+                "--optimizer", "SGD",
+                "--lr", "0.1",
+                "--scheduler", "CosineAnnealingLR",
+                "--save_path", "./results/test_ad_oti_archieve",
+                "--num_gpus", "1",
+                "--workers", "4",
+                "--oti_mode", "full",
+                "--exp", "flip",
+                "--num_flip", "40",
+                "--delta_0", "20",
+                "--delta_min", "8",
+                "--delta_max", "50",
+                "--delta_step", "2",
+                "--eps_min", "0.01",
+                "--eps_max", "0.1"
+            ]
+        }
     ]
 }
