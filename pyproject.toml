@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "backpack-for-pytorch>=1.7.1",
+    "black>=25.1.0",
     "jupyter>=1.1.1",
     "matplot>=0.1.9",
     "pandas>=2.2.3",
