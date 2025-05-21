@@ -1,13 +1,3 @@
-###
-# File: ./script/run_tracin_order_stability.py
-# Created Date: [Current Date]
-# Author: [Your Name/Gemini]
-# -----
-# HISTORY:
-# Date      \t\tBy   \tComments
-# ----------\t\t------\t---------------------------------------------------------
-###
-
 import os
 import time
 import subprocess
@@ -20,13 +10,12 @@ import itertools
 # ======================================================================================
 
 # 设备类型配置: 'cuda' 或 'mps'
-# 如果使用 'cuda', gpus 列表中的 ID 将被使用。
-# 如果使用 'mps', gpus 列表将被忽略，所有 MPS 任务在单个 MPS 设备上运行 (可以并发多个任务)。
-# device_types = ['cuda']  # 例如: ['cuda', 'mps'] 或 ['mps']
-device_types = ['mps']
+# 如果使用 'cuda', gpus 列表中的 ID 将被使用
+# 如果使用 'mps', gpus 列表将被忽略，所有 MPS 任务在单个 MPS 设备上运行
+device_types = ['cuda']  # 例如: ['cuda', 'mps'] 或 ['mps']
 
 # GPU列表 (仅当 device_types 包含 'cuda' 时相关)
-gpus = [0, 1]  # 根据可用CUDA GPU进行修改
+gpus = [0, 1, 2, 3]  # 使用4个GPU
 
 # 数据集和模型配置
 datasets_models = [
@@ -34,11 +23,11 @@ datasets_models = [
     # {"dataset": "CIFAR10", "model": "ResNet18"}, # 可以添加更多组合
 ]
 
-# 随机种子
-seeds = [42, 123] # 可以根据需要添加更多种子
+# 随机种子 - 使用4个不同的种子
+seeds = [42, 43, 44, 45]
 
 # TracIn 选择阶段的 Epochs
-selection_epochs_list = [1,2,3,4,5]
+selection_epochs_list = [1,3,5]
 
 # TracIn 使用的测试样本数量
 num_scores_list = [100] # 通常固定，除非有特定测试需求
@@ -50,24 +39,21 @@ batch_sizes = [256]
 base_save_dir = "./results/tracin_order_stability"
 
 # Python解释器路径 (如果不在系统PATH或特定venv)
-# python_executable = "/home/jie/DeepCore/.venv/bin/python" # 与 early_detection_experiment.py 保持一致
 python_executable = "python" # 假设在正确的环境中运行，或python在PATH中
 
 # 并发MPS任务的数量 (如果 device_types 包含 'mps')
-# 注意：这仍然在单个MPS设备上运行，但允许同时启动多个Python进程进行实验。
-# 过多并发可能导致资源竞争，根据机器性能调整。
 max_concurrent_mps_tasks = 1
 
 # ======================================================================================
 # 基础命令构建
 # ======================================================================================
 # 注意: --exp tracin_order 表明我们要运行的是修改后的特定顺序稳定性实验
-# 其他通用参数可以放在这里
 base_cmd_template = (
     f"{python_executable} -m main --exp tracin_order "
-    # "--num_gpus 1 " # 这个参数的含义可能需要根据main.py的修改来确定
-    "--workers 2 " 
+    "--selection TracIn "
+    "--workers 16 " # 每个GPU使用16个CPU
     "--data_path ./data " # 假设数据在 ./data 目录下
+    "--fraction 0.1 "     # 必须的参数，虽然在此实验中不直接使用
 )
 
 # ======================================================================================
@@ -75,8 +61,8 @@ base_cmd_template = (
 # ======================================================================================
 def run_task(task_params):
     (
-        device_type, # 'cuda' or 'mps'
-        gpu_id_or_none, # cuda_id or None for mps/cpu
+        device_type,      # 'cuda' or 'mps'
+        gpu_id_or_none,   # cuda_id or None for mps/cpu
         dataset_config,
         seed,
         selection_epochs,
@@ -90,7 +76,7 @@ def run_task(task_params):
     # 构建保存路径，加入设备类型
     specific_save_path = os.path.join(
         base_save_dir,
-        f"{dataset_name}_{model_name}_{device_type}", # 使用 device_type 而不是 device_str
+        f"{dataset_name}_{model_name}_{device_type}",
         f"seed{seed}_e{selection_epochs}_b{batch_size}_s{num_scores}",
     )
     os.makedirs(specific_save_path, exist_ok=True)
@@ -98,10 +84,7 @@ def run_task(task_params):
     # 构建特定于设备的参数
     device_arg_str = f"--device {device_type}"
     if device_type == 'cuda' and gpu_id_or_none is not None:
-        # 只有当是cuda设备且gpu_id有效时，才添加 --gpu 参数
-        # 假设 main.py 的 --gpu 参数用于指定单个CUDA ID，如果支持多个，main.py的解析需要对应调整
         device_arg_str += f" --gpu {gpu_id_or_none}"
-    # 对于 MPS 或 CPU，不传递 --gpu 参数，或者 main.py 应忽略它
 
     # 构建完整命令
     cmd = (
@@ -110,10 +93,10 @@ def run_task(task_params):
         f"--model {model_name} "
         f"--seed {seed} "
         f"--selection_epochs {selection_epochs} "
-        f"--num_scores {num_scores} "
+        f"--num_scores {num_scores} " # 这里传入用于计算TracIn分数的测试样本数量
         f"--batch {batch_size} "
         f"--save_path {specific_save_path} "
-        f"{device_arg_str} " # 替换旧的 --gpu device_str
+        f"{device_arg_str} "
     )
 
     actual_device_log = f"{device_type}:{gpu_id_or_none}" if device_type == 'cuda' else device_type
@@ -139,7 +122,9 @@ def run_task(task_params):
 # ======================================================================================
 def main():
     print("=" * 80)
-    print("开始运行 TracIn 顺序稳定性批量实验")
+    print("开始运行 TracIn 顺序稳定性批量实验（修改版）")
+    print("实验说明: 从训练集中选出200个点, 只计算选出的这200个点的TracIn score, 然后再从中选出40个点")
+    print("分别将这40个点放在第一个epoch和最后一个epoch, 然后计算这40个点在200点中score的分布情况")
     print("=" * 80 + "\n")
 
     all_task_configs = []
@@ -198,26 +183,17 @@ def main():
     num_worker_threads = 0
 
     # 根据配置的设备类型和数量确定worker数量
-    # 对于CUDA，每个指定的GPU一个worker
-    # 对于MPS，使用 max_concurrent_mps_tasks 作为worker数量
-    # 对于CPU (如果添加)，可以类似MPS处理或指定一个并发数
-    
-    # 简单处理：总worker数是 （CUDA GPU数）+ （MPS并发数 if mps in types）
     if 'cuda' in device_types and gpus:
         num_worker_threads += len(gpus)
     if 'mps' in device_types:
-        num_worker_threads = max(num_worker_threads, max_concurrent_mps_tasks) # 允许多个MPS任务，但不超过CUDA workers
-        # 或者，如果希望MPS任务独立于CUDA worker计数：
-        # num_worker_threads = 0 # 重置
-        # if 'cuda' in device_types and gpus: num_worker_threads += len(gpus)
-        # if 'mps' in device_types: num_worker_threads += max_concurrent_mps_tasks
-    if 'cpu' in device_types: # 示例: 假设CPU任务也是并发的
-        num_worker_threads = max(num_worker_threads, 1) # 至少一个worker给CPU, 或配置并发数
+        num_worker_threads = max(num_worker_threads, max_concurrent_mps_tasks)
+    if 'cpu' in device_types:
+        num_worker_threads = max(num_worker_threads, 1)
 
     if num_worker_threads == 0:
         # 如果队列中有任务，但没有配置worker，则默认至少一个worker顺序执行
         if not task_queue.empty():
-            print("警告: 未明确配置worker线程数 (检查 GPUs, MPS, CPU 配置)，但队列中有任务。将使用1个worker顺序执行。")
+            print("警告: 未明确配置worker线程数，但队列中有任务。将使用1个worker顺序执行。")
             num_worker_threads = 1
         else:
             print("没有配置有效的worker线程，也没有任务在队列中。")

@@ -3,7 +3,7 @@
 # Created Date: Sunday, May 4th 2025
 # Author: Claude
 # -----
-# Last Modified: Friday, 9th May 2025 10:13:37 am
+# Last Modified: Tuesday, 20th May 2025 12:02:10 pm
 # -----
 # HISTORY:
 # Date      		By   	Comments
@@ -23,6 +23,7 @@ from liveval.datasets.flipped_dataset import IndexedDataset
 from torch.utils.data import DataLoader, Subset
 import torch.multiprocessing as mp
 import tqdm
+from liveval.utils.utils import custom_collate
 
 
 class TracIn(EarlyTrain):
@@ -159,17 +160,53 @@ class TracIn(EarlyTrain):
         else:
             self.test_subset = self.dst_test
 
+        # 包装测试数据集为 IndexedDataset
+        if not isinstance(self.test_subset, IndexedDataset):
+            indices = np.arange(len(self.test_subset))
+            self.test_subset = IndexedDataset(self.test_subset, indices)
+            self.logger.info("Wrapped test dataset in IndexedDataset")
+
         self.test_loader = DataLoader(
             self.test_subset,
             batch_size=self.args.selection_batch,
             shuffle=False,
             num_workers=self.args.workers,
             pin_memory=True,
+            collate_fn=custom_collate,
         )
 
         self.logger.info(
             f"Initialized test loader with {len(self.test_subset)} samples"
         )
+
+    @override
+    def _get_train_loader(self):
+        """Create and return training data loader with IndexedDataset support."""
+        self.logger.info("Creating training data loader.")
+
+        # 创建 IndexedDataset
+        if not isinstance(self.dst_train, IndexedDataset):
+            indices = np.arange(len(self.dst_train))
+            self.dst_train = IndexedDataset(self.dst_train, indices)
+            self.logger.info("Wrapped dataset in IndexedDataset")
+
+        # Create DataLoader with custom collate function
+        train_loader = torch.utils.data.DataLoader(
+            self.dst_train,
+            batch_size=self.args.selection_batch,
+            shuffle=False,
+            num_workers=self.args.workers,
+            pin_memory=True,
+            collate_fn=custom_collate,
+        )
+
+        self.logger.info(
+            "Training data loader created with batch size %d and %d workers.",
+            self.args.selection_batch,
+            self.args.workers,
+        )
+
+        return train_loader, self.dst_train.indices
 
     def _initialize_data_loader(self):
         """
@@ -179,7 +216,8 @@ class TracIn(EarlyTrain):
         - self.train_indices is initialized with the indices of the training data.
         - self.train_iterator is initialized with the iterator for the training loader.
         """
-        super()._initialize_data_loader()
+        self.train_loader, self.train_indices = self._get_train_loader()
+        self.train_iterator = iter(self.train_loader)
         self._initialize_test_loader()
 
     def _compute_gradients(self, model, inputs, targets, device):

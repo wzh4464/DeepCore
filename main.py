@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Tuesday, 20th May 2025 11:12:18 am
+# Last Modified: Tuesday, 20th May 2025 11:31:44 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -59,6 +59,7 @@ def parse_args():
         --epochs (int): Number of total epochs to run (default: 200).
         --data_path (str): Dataset path (default: "data").
         --gpu (int): GPU id to use (default: None).
+        --device (str): Specify the device to use (e.g., 'cuda', 'cuda:0', 'cpu', 'mps').
         --print_freq (int): Print frequency (default: 20).
         --fraction (float): Fraction of data to be selected (default: 0.1).
         --seed (int): Random seed (default: current time in milliseconds % 100000).
@@ -130,6 +131,13 @@ def parse_args():
     parser.add_argument("--data_path", type=str, default="data", help="dataset path")
     parser.add_argument(
         "--gpu", default=None, nargs="+", type=int, help="GPU id to use"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Specify the device to use (e.g., 'cuda', 'cuda:0', 'cpu', 'mps'). " +
+             "If 'auto' or not specified, the script will attempt to detect the best available device. Default: 'auto'."
     )
     parser.add_argument(
         "--print_freq", "-p", default=20, type=int, help="print frequency (default: 20)"
@@ -452,9 +460,17 @@ def parse_args():
     )
 
     args = parser.parse_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        args.device = "mps"
+    
+    # args.device is pre-populated by argparse due to the new --device argument, with "auto" as default.
+    if args.device.lower() == "auto":
+        if torch.cuda.is_available():
+            args.device = "cuda"
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            args.device = "mps"
+        else:
+            args.device = "cpu"
+    # If args.device was not "auto" (e.g., user passed --device cuda:1 or --device cpu),
+    # it retains that user-specified value. PyTorch will validate it later.
 
     # add args.timestamp
     args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -655,29 +671,53 @@ def main():
     else:
         logger.info("未检测到可用GPU或MPS，使用CPU模式")
 
-    # 强制物理GPU设定
-    if args.gpu is not None and torch.cuda.is_available():
-        torch.cuda.set_device(args.gpu[0])
-        logger.info(f"当前进程已强制使用物理GPU: {args.gpu[0]} ({torch.cuda.get_device_name(args.gpu[0])})")
-    elif args.device == "mps":
-        logger.info("当前进程将使用 MPS 设备")
-    else:
-        logger.info("未指定GPU或无GPU/MPS可用，使用CPU")
+    logger.info(f"Device selected based on --device argument or auto-detection: {args.device}")
 
-    # 用参数初始化所有随机种子
+    # Initialize global random seeds
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    if args.device == "cuda":
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(args.seed)
-            torch.cuda.manual_seed_all(args.seed)
-    elif args.device == "mps":
-        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            torch.mps.manual_seed(args.seed)
+    logger.info(f"Global random seeds (random, numpy, torch.manual_seed) initialized with: {args.seed}")
 
-    cudnn.deterministic = True
-    cudnn.benchmark = False
+    # Device-specific setups
+    if args.device.startswith("cuda"):
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed) # Seeds all CUDA GPUs
+            logger.info(f"CUDA random seeds (torch.cuda.manual_seed_all) initialized with seed {args.seed}.")
+            
+            # Handle --gpu argument for specific CUDA device selection for current context
+            if args.gpu is not None and len(args.gpu) > 0:
+                selected_gpu_idx = args.gpu[0]
+                try:
+                    torch.cuda.set_device(selected_gpu_idx)
+                    logger.info(f"Context specifically set to CUDA device: GPU {selected_gpu_idx} ({torch.cuda.get_device_name(selected_gpu_idx)}) as per --gpu argument.")
+                except Exception as e:
+                    logger.error(f"Error setting CUDA context to GPU {selected_gpu_idx} (from --gpu): {e}. Current default device remains based on '{args.device}'.")
+            
+            if args.device == "cuda": # Log default device if args.device is just "cuda"
+                current_cuda_device_idx = torch.cuda.current_device()
+                logger.info(f"PyTorch default CUDA device is: GPU {current_cuda_device_idx} ({torch.cuda.get_device_name(current_cuda_device_idx)}). Tensors sent to 'cuda' will use this.")
+
+            cudnn.deterministic = True
+            cudnn.benchmark = False
+            logger.info("CuDNN settings: cudnn.deterministic=True, cudnn.benchmark=False.")
+        else:
+            logger.warning(f"Configuration specifies CUDA ('{args.device}'), but CUDA is not available. Falling back to CPU.")
+            args.device = "cpu"
+            logger.info(f"Switched to CPU. Device is now '{args.device}'.")
+    elif args.device == "mps":
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            logger.info(f"Using MPS device ('{args.device}'). Seed {args.seed} applied via torch.manual_seed.")
+        else:
+            logger.warning(f"Configuration specifies MPS ('{args.device}'), but MPS is not available/built. Falling back to CPU.")
+            args.device = "cpu"
+            logger.info(f"Switched to CPU. Device is now '{args.device}'.")
+    elif args.device == "cpu":
+        logger.info(f"Using CPU device ('{args.device}'). Seed {args.seed} applied via torch.manual_seed.")
+    else:
+        logger.warning(f"Device '{args.device}' is not one of 'cuda', 'mps', 'cpu', or 'auto'. "
+                       f"Attempting to proceed. Ensure '{args.device}' is a valid PyTorch device string.")
+
     logger.info(f"所有随机种子已初始化为: {args.seed}")
 
     # 统一实验入口分发
