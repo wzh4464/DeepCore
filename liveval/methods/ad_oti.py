@@ -106,6 +106,11 @@ class AD_OTI(OTI):
         self.eps_min = eps_min
         self.eps_max = eps_max
 
+        # log
+        self.logger.info(
+            f"AD_OTI initialized with parameters: delta={self.delta}, delta_min={self.delta_min}, delta_max={self.delta_max}, delta_step={self.delta_step}, eps_min={self.eps_min}, eps_max={self.eps_max}"
+        )
+
         # Initialize storage for parameters and valuations
         # Each entry in param_queue will be a tuple:
         # (t, params, learning_rate, batch_indices)
@@ -764,7 +769,7 @@ class AD_OTI(OTI):
         for epoch in range(self.epochs):
             self.logger.info(f"[AD_OTI Score Calc] Epoch {epoch + 1}/{self.epochs}")
             self._setup_optimizer_scheduler(use_learning_rate) # Reset optimizer for each epoch simulation if needed
-            
+
             # Re-initialize train_iterator for each epoch if it's consumed per epoch
             # This ensures we iterate over the full dataset for each simulated epoch.
             self.train_iterator = iter(self.train_loader) 
@@ -772,7 +777,7 @@ class AD_OTI(OTI):
             for batch_idx, (inputs, targets, batch_indices) in enumerate(self.train_iterator):
                 if current_step_global >= T:
                     break # Stop if total steps T are reached
-                
+
                 current_step_global += 1
                 t = current_step_global
 
@@ -809,7 +814,7 @@ class AD_OTI(OTI):
 
                 # Update reference pairs Q_ref
                 t_prime = min(t + delta - 1, T) # t_ref in paper is t - 1 + delta_t
-                                                # Here, t_eval is t, so t_ref is t + delta -1
+                # Here, t_eval is t, so t_ref is t + delta -1
                 Q_ref.append((t, t_prime))
 
                 # Process completed reference pairs from Q_ref
@@ -817,7 +822,7 @@ class AD_OTI(OTI):
                 # Need to track which batch_indices correspond to t_1 when processing
                 # For simplicity here, we assume batch_indices of current step t are relevant if t becomes t_1
                 # This part needs careful alignment with how _process_reference_pairs in `select` handles batch_indices
-                
+
                 # Store batch_indices with their step t for later valuation
                 # We need a way to link (t_1, t_2) from Q_ref to the batch_indices active at t_1
                 # Let's use a temporary store for batch_indices per step that Q_ref might point to.
@@ -837,7 +842,7 @@ class AD_OTI(OTI):
 
                     theta_t2_ref = next((theta for step, theta in Q_theta if step == t_2_ref), None)
                     theta_t1_eval_prev = next((theta for step, theta in Q_theta if step == t_1_eval - 1), None)
-                    
+
                     # Retrieve batch_indices for t_1_eval. This is tricky in this loop structure.
                     # The original paper implies v_i^t is for sample i in batch B_t.
                     # So when (t_eval, t_ref) is processed, we need batch_indices from t_eval.
@@ -850,7 +855,7 @@ class AD_OTI(OTI):
                     # if t_1_eval == t. This is a simplification and likely incorrect for full alignment.
                     # The `_update_cumulative_valuations` expects `batch_indices` that were active
                     # when `theta_t1_prev` was used to compute `gradients_tensor` to form `pseudo_params`.
-                    
+
                     # A more correct simulation would require storing (step, batch_indices) and retrieving batch_indices for t_1_eval.
                     # Let's refine this: we need to find the data (inputs, targets, batch_indices) that were processed at step t_1_eval.
                     # This is not directly available in the current loop structure without more storage.
@@ -860,14 +865,14 @@ class AD_OTI(OTI):
                     # The original request was to integrate adaptive window with score calculation.
                     # A pragmatic approach might be to use the adaptive `delta` to guide which `theta_ref`
                     # to use, but keep the simpler OTI-like batch scoring for `_calculate_scores`.
-                    
+
                     # Revisiting: The goal is *adaptive reference points*. So we do need theta_t2_ref and theta_t1_eval_prev.
                     # The `_update_cumulative_valuations` method needs `batch_indices` that correspond to `theta_t1_eval_prev`.
                     # This means we must associate `batch_indices` with `t_1_eval`.
                     # Let's simplify by using the `inputs`, `targets`, `batch_indices` of the *current* outer loop iteration (batch_idx)
                     # if `t_1_eval` happens to be the *current global step t*.
                     # This is still an approximation. The original `select` method processes `batch_indices` of the current step `t`
-                    # if `t` becomes `t_1` for a reference pair. 
+                    # if `t` becomes `t_1` for a reference pair.
 
                     if theta_t2_ref is not None and theta_t1_eval_prev is not None:
                         # We need the batch_data and batch_targets that were processed at step t_1_eval.
@@ -876,7 +881,7 @@ class AD_OTI(OTI):
                         # This implies that `_calculate_scores` cannot easily replicate the *exact* online valuation of `select`
                         # without storing all historical batches or re-iterating the dataset up to t_1_eval for each valuation.
 
-                        # Compromise: Use the current batch's data (inputs, targets, batch_indices) for valuation 
+                        # Compromise: Use the current batch's data (inputs, targets, batch_indices) for valuation
                         # if t_1_eval == t (i.e., the valuation is for the current step's data using a future reference).
                         # This is what happens in `select` implicitly: batch_indices are from current step `t` which becomes `t_1`.
                         if t_1_eval == t: # If the evaluation point is the current step
@@ -892,7 +897,7 @@ class AD_OTI(OTI):
                     Q_theta = deque(
                         [(step_q, theta_q) for step_q, theta_q in Q_theta if step_q >= t_1_eval - 1]
                     )
-            
+
             if current_step_global >= T:
                 self.logger.info("[AD_OTI Score Calc] Reached total steps T. Stopping epoch simulation.")
                 break
@@ -908,7 +913,7 @@ class AD_OTI(OTI):
             )
 
         # Set any zero scores to NaN (matching OTI behavior if desired, or keep as 0)
-        # v_cumulative[v_cumulative == 0.0] = float("nan") 
+        # v_cumulative[v_cumulative == 0.0] = float("nan")
         # Decided to keep as 0 for AD_OTI unless NaN is specifically needed.
 
         # Save scores if needed (similar to _select_top_samples)
@@ -940,6 +945,12 @@ class AD_OTI(OTI):
         logger.info(
             f"Number of flipped samples in the lowest {args.num_flip} scores: {num_flipped_in_lowest_scores}"
         )
+
+        # save to result.txt
+        with open(os.path.join(args.save_path, "result.txt"), "a") as f:
+            ratio = float(num_flipped_in_lowest_scores) / float(args.num_flip)
+            f.write(f"{ratio}")
+
         return num_flipped_in_lowest_scores
 
 
