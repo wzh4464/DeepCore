@@ -148,3 +148,85 @@ plt.tight_layout()
 plt.show()
 
 # %%
+# TracIn order stability
+
+# print version of python and matplotlib
+import sys
+import matplotlib # For matplotlib.__version__
+import matplotlib.pyplot as plt # For plotting functions like figure, xlabel, etc.
+import pandas as pd # For DataFrame manipulation
+import seaborn as sns # For seaborn plots
+
+print(f"Python version: {sys.version}")
+print(f"Matplotlib version: {matplotlib.__version__}")
+# Optionally, print Seaborn version if desired for debugging or records
+# print(f"Seaborn version: {sns.__version__}")
+
+# print(f"Number of focus samples: {fouces_num}") # This was commented out in the original
+tracin_scores_focus_first = pd.read_csv("results/tracin_order_stability/MNIST_LeNet_cuda_bak/seed42_e5_b256_s100/tracin_scores_focus_first.csv")
+tracin_scores_focus_last = pd.read_csv("results/tracin_order_stability/MNIST_LeNet_cuda_bak/seed42_e5_b256_s100/tracin_scores_focus_last.csv")
+
+plt.rcParams["font.family"] = "Times New Roman"
+
+# --- First Plot: Original TracIn Scores ---
+
+# Prepare data for Seaborn
+# Filter for 'is_focus' (assuming it's a boolean column) and select 'tracin_score'
+scores_ff_orig = tracin_scores_focus_first[tracin_scores_focus_first["is_focus"]]["tracin_score"]
+scores_fl_orig = tracin_scores_focus_last[tracin_scores_focus_last["is_focus"]]["tracin_score"]
+
+# Combine into a single DataFrame with a 'Condition' column for hue
+df_plot_orig = pd.concat([
+    pd.DataFrame({'tracin_score': scores_ff_orig, 'Condition': 'focus_first'}),
+    pd.DataFrame({'tracin_score': scores_fl_orig, 'Condition': 'focus_last'})
+])
+
+# Create the plot
+plt.figure(figsize=(10, 4))
+sns.histplot(data=df_plot_orig, x="tracin_score", hue="Condition", 
+             bins=20, 
+             palette={"focus_first": "salmon", "focus_last": "skyblue"}, # Colors for each condition
+             alpha=0.7, 
+             edgecolor="black", 
+             linewidth=1, 
+             multiple="layer", # Overlay histograms, similar to how plt.hist([data1, data2]) behaves
+             hue_order=["focus_first", "focus_last"]) # Ensure consistent order for colors and legend
+
+plt.xlabel("TracIn Score", fontsize=12)
+plt.ylabel("Number of Samples", fontsize=12)
+plt.title("Distribution of TracIn Scores: Focus First vs Focus Last", fontsize=14)
+# plt.legend(fontsize=11) # Customize legend font size (Seaborn creates the legend via hue)
+plt.tight_layout()
+plt.show()
+
+# --- Second Plot: Absolute TracIn Scores ---
+
+# Prepare data for Seaborn (absolute values)
+scores_ff_abs = tracin_scores_focus_first[tracin_scores_focus_first["is_focus"]]["tracin_score"].abs()
+scores_fl_abs = tracin_scores_focus_last[tracin_scores_focus_last["is_focus"]]["tracin_score"].abs()
+
+# Combine into a single DataFrame
+df_plot_abs = pd.concat([
+    pd.DataFrame({'tracin_score': scores_ff_abs, 'Condition': 'focus_first'}),
+    pd.DataFrame({'tracin_score': scores_fl_abs, 'Condition': 'focus_last'})
+])
+
+# Create the plot
+plt.figure(figsize=(10, 4))
+sns.histplot(data=df_plot_abs, x="tracin_score", hue="Condition",
+             bins=20,
+             palette={"focus_first": "salmon", "focus_last": "skyblue"},
+             alpha=0.7,
+             edgecolor="black",
+             linewidth=1,
+             multiple="layer",
+             hue_order=["focus_first", "focus_last"])
+
+plt.xlabel("Absolute TracIn Score", fontsize=12) # X-axis label updated for absolute values
+plt.ylabel("Number of Samples", fontsize=12)
+plt.title("Distribution of Absolute TracIn Scores: Focus First vs Focus Last", fontsize=14) # Title updated
+# plt.legend(fontsize=11)
+plt.tight_layout()
+plt.show()
+
+# %%
