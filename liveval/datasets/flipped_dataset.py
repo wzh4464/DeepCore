@@ -3,7 +3,7 @@
 # Created Date: Friday, November 22nd 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 1:21:34 am
+# Last Modified: Wednesday, 21st May 2025 9:44:13 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -16,12 +16,12 @@ import os
 import torch
 import numpy as np
 from .cache_utils import DatasetCache
+from .base_dataset import BaseDataset
 
 
-class IndexedDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, indices):
-        self.dataset = dataset
-        self.indices = indices
+class IndexedDataset(BaseDataset):
+    def __init__(self, dataset, indices, metadata_manager=None):
+        super().__init__(dataset, indices, metadata_manager)
         # 如果 dataset 是 IndexedDataset 实例，则获取其原始数据集
         while isinstance(self.dataset, IndexedDataset):
             self.dataset = self.dataset.dataset

@@ -19,7 +19,9 @@ class GraNd(EarlyTrain):
         balance=False,
         **kwargs,
     ):
-        super().__init__(dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs)
+        super().__init__(
+            dst_train, args, fraction, random_seed, epochs, specific_model, **kwargs
+        )
         self.epochs = epochs
         self.n_train = len(dst_train)
         self.coreset_size = round(self.n_train * fraction)
@@ -27,18 +29,10 @@ class GraNd(EarlyTrain):
         self.repeat = repeat
         self.balance = balance
 
-        # 添加对flipped indices的跟踪
-        self.flipped_indices = (
-            dst_train.get_flipped_indices()
-            if hasattr(dst_train, "get_flipped_indices")
-            else []
-        )
-        # 添加对scores indices的跟踪
-        self.scores_indices = (
-            dst_train.get_flipped_selection_from()
-            if hasattr(dst_train, "get_flipped_selection_from")
-            else []
-        )
+        # 使用基类方法获取特殊索引
+        self.flipped_indices = self.get_special_indices("flipped")
+        self.scores_indices = self.get_special_indices("selection")
+
         if self.flipped_indices:
             print(f"[GraNd] 跟踪{len(self.flipped_indices)}个翻转样本")
         if self.scores_indices:
@@ -89,13 +83,13 @@ class GraNd(EarlyTrain):
         sample_num = self.n_train
 
         # 初始化所有样本的norm为NaN
-        self.norm_matrix.fill_(float('nan'))
+        self.norm_matrix.fill_(float("nan"))
 
         if self.scores_indices:
             print(f"[GraNd] 只为{len(self.scores_indices)}个特定样本计算分数")
 
         for i, (input, targets, true_idx) in enumerate(train_loader):
-            batch_indices = true_idx.numpy() if hasattr(true_idx, 'numpy') else true_idx
+            batch_indices = true_idx.numpy() if hasattr(true_idx, "numpy") else true_idx
 
             # 只保留需要 selection 的样本
             if self.scores_indices:
@@ -106,7 +100,7 @@ class GraNd(EarlyTrain):
                 mask = np.array(mask)
                 input = input[mask]
                 targets = targets[mask]
-                if hasattr(batch_indices, 'shape'):
+                if hasattr(batch_indices, "shape"):
                     batch_indices = batch_indices[mask]
                 else:
                     batch_indices = np.array(batch_indices)[mask]
@@ -123,25 +117,29 @@ class GraNd(EarlyTrain):
                 individual_losses = [loss]  # 将标量 loss 放入列表中
             else:
                 individual_losses = torch.unbind(loss)
-            
+
             for j in range(len(individual_losses)):
-                sample_idx = batch_indices[j].item() if hasattr(batch_indices[j], 'item') else batch_indices[j]
+                sample_idx = (
+                    batch_indices[j].item()
+                    if hasattr(batch_indices[j], "item")
+                    else batch_indices[j]
+                )
                 # 只为特定样本计算分数
                 # if self.scores_indices and sample_idx not in self.scores_indices:
                 #     continue
                 matrix_idx = sample_idx
-                
+
                 # 计算单个样本的梯度
                 self.model_optimizer.zero_grad()
                 individual_losses[j].backward(retain_graph=True)
-                
+
                 # 计算所有参数梯度的平方和的平方根 (L2范数)
                 grad_norm = 0.0
                 for param in self.model.parameters():
                     if param.grad is not None:
                         grad_norm += param.grad.norm(2).item() ** 2
-                grad_norm = grad_norm ** 0.5
-                
+                grad_norm = grad_norm**0.5
+
                 # 存储梯度范数
                 self.norm_matrix[matrix_idx, self.cur_repeat] = grad_norm
 
@@ -156,15 +154,15 @@ class GraNd(EarlyTrain):
     def select(self, **kwargs):
         self._initialize_data_loader()
         # Initialize a matrix to save norms of each sample on idependent runs
-        window_size = kwargs.get('window_size', self.coreset_size)
-        window_offset = kwargs.get('window_offset', 0.0)
+        window_size = kwargs.get("window_size", self.coreset_size)
+        window_offset = kwargs.get("window_offset", 0.0)
         self.get_scores()
-        
+
         # 使用滑动窗口选择样本
         def select_with_window(indices, scores, window_size, offset=0.0):
             """
             使用滑动窗口选择样本，可以排除得分最高的一些样本
-            
+
             params:
                 indices: 样本索引
                 scores: 对应的分数
@@ -174,7 +172,7 @@ class GraNd(EarlyTrain):
             # 按分数降序排序
             sorted_idx = np.argsort(scores)[::-1]
             total_samples = len(sorted_idx)
-            
+
             # 计算窗口起始位置
             start_idx = int(offset * total_samples)
             # 确保不超出范围
@@ -182,9 +180,9 @@ class GraNd(EarlyTrain):
                 end_idx = total_samples
             else:
                 end_idx = start_idx + window_size
-                
+
             return indices[sorted_idx[start_idx:end_idx]]
-        
+
         if not self.balance:
             # 使用滑动窗口选择样本
             top_examples = select_with_window(
@@ -214,7 +212,7 @@ class GraNd(EarlyTrain):
             print(f"[GraNd] 将为{len(self.scores_indices)}个特定样本计算分数")
         # 初始化为NaN
         self.norm_matrix = torch.full(
-            [self.n_train, self.repeat], float('nan'), requires_grad=False
+            [self.n_train, self.repeat], float("nan"), requires_grad=False
         ).to(self.args.device)
         for self.cur_repeat in range(self.repeat):
             self.before_run()

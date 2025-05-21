@@ -3,7 +3,7 @@
 # Created Date: Sunday, May 4th 2025
 # Author: Claude
 # -----
-# Last Modified: Friday, 9th May 2025 10:13:37 am
+# Last Modified: Wednesday, 21st May 2025 9:44:25 am
 # -----
 # HISTORY:
 # Date      		By   	Comments
@@ -83,30 +83,16 @@ class TracIn(EarlyTrain):
             num_test_samples,
         )
 
-        # Track flipped samples if available
-        self.flipped_indices = (
-            dst_train.get_flipped_indices()
-            if hasattr(dst_train, "get_flipped_indices")
-            else []
-        )
-
-        # 添加对特定子集计算的逻辑，与OTI保持一致
-        self.scores_indices = (
-            dst_train.get_flipped_selection_from()
-            if hasattr(dst_train, "get_flipped_selection_from")
-            else []
-        )
+        # 使用基类方法获取特殊索引
+        self.flipped_indices = self.get_special_indices("flipped")
+        self.scores_indices = self.get_special_indices("selection")
 
         if self.flipped_indices:
-            self.logger.info(
-                f"Tracking {len(self.flipped_indices)} flipped samples"
-            )
+            self.logger.info(f"Tracking {len(self.flipped_indices)} flipped samples")
 
         # 添加对scores_indices的日志记录
         if self.scores_indices:
-            self.logger.info(
-                f"Computing scores for {len(self.scores_indices)} samples"
-            )
+            self.logger.info(f"Computing scores for {len(self.scores_indices)} samples")
 
     @override
     def after_epoch(self):
@@ -314,7 +300,9 @@ class TracIn(EarlyTrain):
         Returns:
             Tensor of influence scores.
         """
-        self.logger.info("Using only first checkpoint - falling back to single GPU mode")
+        self.logger.info(
+            "Using only first checkpoint - falling back to single GPU mode"
+        )
         return self._compute_influence_scores()
 
     @override

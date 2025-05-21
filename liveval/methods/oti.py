@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 12th May 2025 9:22:26 am
+# Last Modified: Wednesday, 21st May 2025 9:44:19 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -37,7 +37,11 @@ import sys
 from liveval.utils.exception_utils import log_exception, ExceptionHandler
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-from liveval.utils.utils import ScoreTracker, custom_collate, count_flipped_in_lowest_scores
+from liveval.utils.utils import (
+    ScoreTracker,
+    custom_collate,
+    count_flipped_in_lowest_scores,
+)
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -127,17 +131,9 @@ class OTI(EarlyTrain):
 
         self.current_grads = None
 
-        # Add tracking for flipped samples
-        self.flipped_indices = (
-            dst_train.get_flipped_indices()
-            if hasattr(dst_train, "get_flipped_indices")
-            else []
-        )
-        self.scores_indices = (
-            dst_train.get_flipped_selection_from()
-            if hasattr(dst_train, "get_flipped_selection_from")
-            else []
-        )
+        # 使用基类方法获取特殊索引
+        self.flipped_indices = self.get_special_indices("flipped")
+        self.scores_indices = self.get_special_indices("selection")
 
         if self.flipped_indices:
             self.logger.info(
@@ -557,9 +553,7 @@ class OTI(EarlyTrain):
     ) -> torch.Tensor:
         try:
             # 只保留worker编号信息
-            worker_name = (
-                "OTI"
-            )
+            worker_name = "OTI"
             device = torch.device(f"cuda:{device_id}" if device_id >= 0 else "cpu")
 
             self._setup_optimizer_scheduler(use_learning_rate)
@@ -697,7 +691,7 @@ class OTI(EarlyTrain):
                 f"[{worker_name}] Epoch {epoch} Batch {batch_idx}: Loss = {loss.item():.4f}, "
                 f"Samples scored: {len(scores)}, "
                 # remove nan
-                f"Mean score: {scores[~torch.isnan(scores)].mean().item():.4f}, " 
+                f"Mean score: {scores[~torch.isnan(scores)].mean().item():.4f}, "
             )
         return scores, batch_indices_tensor
 

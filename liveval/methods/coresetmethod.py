@@ -44,12 +44,14 @@ class CoresetMethod(object):
         self.dst_train = dst_train  # Save the training dataset
         # 兼容 Subset 类型，递归查找 .classes 属性
         base = dst_train
-        while hasattr(base, 'dataset'):
+        while hasattr(base, "dataset"):
             base = base.dataset
-        if hasattr(base, 'classes'):
+        if hasattr(base, "classes"):
             self.num_classes = len(base.classes)
         else:
-            raise AttributeError('Training dataset (or its base) must have a .classes attribute')
+            raise AttributeError(
+                "Training dataset (or its base) must have a .classes attribute"
+            )
         self.fraction = fraction  # Save the fraction of the dataset to be selected
         self.random_seed = random_seed  # Save the seed value for random selection (for reproducibility)
         self.index = []  # List to store the indices of the selected samples
@@ -63,6 +65,38 @@ class CoresetMethod(object):
         self.coreset_size = round(
             self.n_train * fraction
         )  # Calculate the number of samples to be selected based on the fraction
+
+        # 添加对特殊索引的获取逻辑
+        self.special_indices = {}
+        self._extract_special_indices(dst_train)
+
+        if hasattr(self, "logger"):
+            # 记录特殊索引状态
+            for key, indices in self.special_indices.items():
+                if indices and len(indices) > 0:
+                    self.logger.info(f"Loaded {len(indices)} {key} indices")
+
+    def _extract_special_indices(self, dataset):
+        """提取数据集中的特殊索引"""
+        # 首先尝试通过 get_special_indices 获取
+        if hasattr(dataset, "get_special_indices"):
+            for type_name in ["flipped", "selection", "corrupted"]:
+                indices = dataset.get_special_indices(type_name)
+                if indices:
+                    self.special_indices[type_name] = indices
+            return
+
+        # 兼容方式获取
+        if hasattr(dataset, "get_flipped_indices"):
+            self.special_indices["flipped"] = dataset.get_flipped_indices()
+        if hasattr(dataset, "get_flipped_selection_from"):
+            self.special_indices["selection"] = dataset.get_flipped_selection_from()
+        if hasattr(dataset, "get_corrupted_indices"):
+            self.special_indices["corrupted"] = dataset.get_corrupted_indices()
+
+    def get_special_indices(self, type_name):
+        """获取特殊索引"""
+        return self.special_indices.get(type_name, [])
 
     def select(self, **kwargs):
         """

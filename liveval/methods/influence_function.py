@@ -3,7 +3,7 @@
 # Created Date: Friday, May 9th 2025
 # Author: Claude
 # -----
-# Last Modified: Monday, 12th May 2025 9:22:15 am
+# Last Modified: Wednesday, 21st May 2025 9:44:22 am
 # -----
 # HISTORY:
 # Date      		By   	Comments
@@ -27,10 +27,10 @@ from liveval.utils.utils import count_flipped_in_lowest_scores
 class InfluenceFunction(EarlyTrain):
     """
     Implements the Influence Function method for data valuation.
-    
-    This implementation approximates the effect of removing a training point on 
+
+    This implementation approximates the effect of removing a training point on
     the model's test loss by simulating parameter perturbation.
-    
+
     Reference:
     "Understanding Black-box Predictions via Influence Functions"
     Pang Wei Koh and Percy Liang, ICML 2017
@@ -67,29 +67,15 @@ class InfluenceFunction(EarlyTrain):
             damping_term,
         )
 
-        # Track flipped samples if available
-        self.flipped_indices = (
-            dst_train.get_flipped_indices()
-            if hasattr(dst_train, "get_flipped_indices")
-            else []
-        )
-
-        # Track specific samples for scoring as in OTI
-        self.scores_indices = (
-            dst_train.get_flipped_selection_from()
-            if hasattr(dst_train, "get_flipped_selection_from")
-            else []
-        )
+        # 使用基类方法获取特殊索引
+        self.flipped_indices = self.get_special_indices("flipped")
+        self.scores_indices = self.get_special_indices("selection")
 
         if self.flipped_indices:
-            self.logger.info(
-                f"Tracking {len(self.flipped_indices)} flipped samples"
-            )
+            self.logger.info(f"Tracking {len(self.flipped_indices)} flipped samples")
 
         if self.scores_indices:
-            self.logger.info(
-                f"Computing scores for {len(self.scores_indices)} samples"
-            )
+            self.logger.info(f"Computing scores for {len(self.scores_indices)} samples")
 
     def _initialize_test_loader(self):
         """
@@ -101,7 +87,9 @@ class InfluenceFunction(EarlyTrain):
             )
             # If num_test_samples is less than the total, randomly select a subset
             indices = np.random.choice(
-                len(self.dst_train), min(self.num_test_samples, len(self.dst_train)), replace=False
+                len(self.dst_train),
+                min(self.num_test_samples, len(self.dst_train)),
+                replace=False,
             )
             self.test_subset = Subset(self.dst_train, indices)
         else:
@@ -181,16 +169,16 @@ class InfluenceFunction(EarlyTrain):
     def _compute_influence_scores(self):
         """
         Compute influence scores using parameter perturbation approach.
-        
-        The influence of a training example is estimated by measuring how much 
-        the test loss changes when we perturb the model in the direction opposite 
+
+        The influence of a training example is estimated by measuring how much
+        the test loss changes when we perturb the model in the direction opposite
         to that example's gradient.
 
         Returns:
             torch.Tensor: Tensor of influence scores.
         """
         self.logger.info("Computing influence scores")
-        
+
         # Load model parameters
         model_path = os.path.join(self.args.save_path, "influence_model.pt")
         if not os.path.exists(model_path):
@@ -200,69 +188,71 @@ class InfluenceFunction(EarlyTrain):
         else:
             self.before_run()  # Initialize model
             self.model.load_state_dict(torch.load(model_path))
-        
+
         self.model.to(self.args.device)
-        
+
         # Initialize data loaders if not already initialized
         self._initialize_data_loader()
-        
+
         # Compute test loss with current model
         self.model.eval()
         baseline_loss = 0.0
         num_test_samples = 0
-        
+
         with torch.no_grad():
             for inputs, targets, _ in self.test_loader:
-                inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
+                inputs, targets = inputs.to(self.args.device), targets.to(
+                    self.args.device
+                )
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
                 baseline_loss += loss.sum().item()
                 num_test_samples += inputs.size(0)
-        
+
         baseline_loss /= num_test_samples
         self.logger.info(f"Baseline test loss: {baseline_loss:.6f}")
-        
+
         # Compute influence for each training example
         influences = torch.zeros(len(self.dst_train))
-        
+
         # Create generator for processing train data
         train_iter = tqdm(
-            enumerate(self.train_loader), 
-            total=len(self.train_loader), 
-            desc="Computing influences"
+            enumerate(self.train_loader),
+            total=len(self.train_loader),
+            desc="Computing influences",
         )
-        
+
         for batch_idx, (inputs, targets, indices) in train_iter:
             inputs, targets = inputs.to(self.args.device), targets.to(self.args.device)
-            
+
             for i in range(inputs.size(0)):
                 sample_idx = indices[i].item()
-                
+
                 # Skip if not in scores_indices when specified
                 if self.scores_indices and sample_idx not in self.scores_indices:
                     continue
-                
+
                 # Compute gradient for single example
-                single_input = inputs[i:i+1]
-                single_target = targets[i:i+1]
-                
+                single_input = inputs[i : i + 1]
+                single_target = targets[i : i + 1]
+
                 # Get original parameters
                 original_params = [p.clone().detach() for p in self.model.parameters()]
-                
+
                 # Compute gradients
                 train_grads = self._compute_gradients(single_input, single_target)
-                
+
                 # Perturb model parameters in the opposite direction of the gradient
                 # (simulating removal of this sample)
                 with torch.no_grad():
                     for param, grad in zip(self.model.parameters(), train_grads):
                         if param.requires_grad:
                             param.add_(self.damping_term * grad)
-                
+
                 # Compute test loss with perturbed model
                 self.model.eval()
                 perturbed_loss = 0.0
-                
+
                 with torch.no_grad():
                     for test_inputs, test_targets, _ in self.test_loader:
                         test_inputs = test_inputs.to(self.args.device)
@@ -270,25 +260,27 @@ class InfluenceFunction(EarlyTrain):
                         test_outputs = self.model(test_inputs)
                         test_loss = self.criterion(test_outputs, test_targets)
                         perturbed_loss += test_loss.sum().item()
-                
+
                 perturbed_loss /= num_test_samples
-                
+
                 # Compute influence as difference in test loss
                 influence = perturbed_loss - baseline_loss
                 influences[sample_idx] = influence
-                
+
                 # Restore original parameters
                 with torch.no_grad():
-                    for param, orig_param in zip(self.model.parameters(), original_params):
+                    for param, orig_param in zip(
+                        self.model.parameters(), original_params
+                    ):
                         param.copy_(orig_param)
-            
+
             # Update progress bar
             if batch_idx % 5 == 0:
                 train_iter.set_description(
                     f"Computing influences (batch {batch_idx}/{len(self.train_loader)}, "
                     f"influence range: [{influences.min().item():.6f}, {influences.max().item():.6f}])"
                 )
-        
+
         return influences
 
     @override
