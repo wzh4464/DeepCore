@@ -87,9 +87,10 @@ def parse_args():
         --oti_use_sliding_window (bool): Use sliding window in OTI score calculation.
         --eps_min (float): Minimum threshold for loss change (default: 0.1).
         --eps_max (float): Maximum threshold for loss change (default: 0.05).
-        --delta_min (float): Minimum threshold for parameter change (default: 0.1).
-        --delta_max (float): Maximum threshold for parameter change (default: 0.05).
-        --delta_step (float): Step size for parameter change (default: 0.01).
+        --delta_0 (float): Initial window size for adaptive methods (default: 2).
+        --delta_min (float): Minimum window size for adaptive methods (default: 1).
+        --delta_max (float): Maximum window size for adaptive methods (default: 3).
+        --delta_step (float): Step size for window adjustment in adaptive methods (default: 1).
         --log_level (str): Set the logging level (default: "INFO").
         --num_scores (int): Number of scores to calculate for LOO (default: 100).
         --exp (str): Specify the experiment mode: 'train_and_eval' or 'flip'. Default is 'train_and_eval'.
@@ -355,7 +356,7 @@ def parse_args():
         help="Use sliding window in OTI score calculation",
     )
 
-    # 新增 eps_min 和 eps_max delta_min delta_max delta_step
+    # 新增 eps_min 和 eps_max delta_0 delta_min delta_max delta_step
     parser.add_argument(
         "--eps_min",
         type=float,
@@ -369,22 +370,28 @@ def parse_args():
         help="Maximum threshold for loss change",
     )
     parser.add_argument(
+        "--delta_0",
+        type=float,
+        default=2,
+        help="Initial window size for adaptive methods",
+    )
+    parser.add_argument(
         "--delta_min",
         type=float,
-        default=0.1,
-        help="Minimum threshold for parameter change",
+        default=1,
+        help="Minimum window size for adaptive methods",
     )
     parser.add_argument(
         "--delta_max",
         type=float,
-        default=0.05,
-        help="Maximum threshold for parameter change",
+        default=3,
+        help="Maximum window size for adaptive methods",
     )
     parser.add_argument(
         "--delta_step",
         type=float,
-        default=0.01,
-        help="Step size for parameter change",
+        default=1,
+        help="Step size for window adjustment in adaptive methods",
     )
 
     parser.add_argument(
@@ -545,8 +552,8 @@ def initialize_dataset_and_model(args, checkpoint):
                 f"Selection method {args.selection} not found. 可用的方法有: {available_methods}"
             )
 
-        # Initialize selection method with specific OTI options if selected
-        if args.selection == "OTI":
+        # Initialize selection method with specific parameters based on method type
+        if args.selection == "AD_OTI":
             method = method_class(
                 dst_train,
                 args,
@@ -558,26 +565,27 @@ def initialize_dataset_and_model(args, checkpoint):
                 use_learning_rate=args.oti_use_learning_rate,
                 use_sliding_window=args.oti_use_sliding_window,
                 dst_test=dst_test,
-                **selection_args,
-            )
-        elif args.selection == "AD_OTI":
-            method = method_class(
-                dst_train,
-                args,
-                args.fraction,
-                args.seed,
-                num_gpus=args.num_gpus,
-                mode=args.oti_mode,
-                use_regularization=args.oti_use_regularization,
-                use_learning_rate=args.oti_use_learning_rate,
-                use_sliding_window=args.oti_use_sliding_window,
-                dst_test=dst_test,
-                eps_min=args.eps_min,
-                eps_max=args.eps_max,
+                delta_0=args.delta_0,
                 delta_min=args.delta_min,
                 delta_max=args.delta_max,
                 delta_step=args.delta_step,
+                eps_min=args.eps_min,
+                eps_max=args.eps_max,
                 **selection_args,
+            )
+        elif args.selection == "OTI":
+            method = method_class(
+                dst_train,
+                args,
+                args.fraction,
+                args.seed,
+                num_gpus=args.num_gpus,
+                mode=args.oti_mode,
+                use_regularization=args.oti_use_regularization,
+                use_learning_rate=args.oti_use_learning_rate,
+                use_sliding_window=args.oti_use_sliding_window,
+                dst_test=dst_test,
+                epochs=args.selection_epochs,
             )
         else:
             method = method_class(
@@ -1133,14 +1141,50 @@ def _perform_flip_experiment(logger, args, start_exp, checkpoint):
 
         method_class = SELECTION_METHODS.get(args.selection)
 
-        method = method_class(
-            flipped_train_dataset,
-            args,
-            args.fraction,
-            args.seed,
-            dst_test=test_loader.dataset,
-            epochs=args.selection_epochs,
-        )
+        # Initialize selection method with specific parameters based on method type
+        if args.selection == "AD_OTI":
+            method = method_class(
+                flipped_train_dataset,
+                args,
+                args.fraction,
+                args.seed,
+                num_gpus=args.num_gpus,
+                mode=args.oti_mode,
+                use_regularization=args.oti_use_regularization,
+                use_learning_rate=args.oti_use_learning_rate,
+                use_sliding_window=args.oti_use_sliding_window,
+                dst_test=test_loader.dataset,
+                delta_0=args.delta_0,
+                delta_min=args.delta_min,
+                delta_max=args.delta_max,
+                delta_step=args.delta_step,
+                eps_min=args.eps_min,
+                eps_max=args.eps_max,
+                epochs=args.selection_epochs,
+            )
+        elif args.selection == "OTI":
+            method = method_class(
+                flipped_train_dataset,
+                args,
+                args.fraction,
+                args.seed,
+                num_gpus=args.num_gpus,
+                mode=args.oti_mode,
+                use_regularization=args.oti_use_regularization,
+                use_learning_rate=args.oti_use_learning_rate,
+                use_sliding_window=args.oti_use_sliding_window,
+                dst_test=test_loader.dataset,
+                epochs=args.selection_epochs,
+            )
+        else:
+            method = method_class(
+                flipped_train_dataset,
+                args,
+                args.fraction,
+                args.seed,
+                dst_test=test_loader.dataset,
+                epochs=args.selection_epochs,
+            )
 
         score = method.get_scores()
 
