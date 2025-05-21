@@ -3,7 +3,7 @@
 # Created Date: Wednesday, November 13th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:44 pm
+# Last Modified: Wednesday, 21st May 2025 8:16:58 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -483,12 +483,11 @@ class EarlyTrain(CoresetMethod):
             print("Using MPS.")
             self.model = self.model.to("mps")
         elif self.args.gpu is not None:
-            torch.cuda.set_device(self.args.gpu[0])
-            self.model = nets.nets_utils.MyDataParallel(
-                self.model, device_ids=self.args.gpu
-            )
+            # 如果指定了GPU
+            print(f"使用GPU {self.args.gpu} 进行训练")
         elif torch.cuda.device_count() > 1:
             self.model = nets.nets_utils.MyDataParallel(self.model).cuda()
+            print(f"使用所有可用的{torch.cuda.device_count()}个GPU进行并行训练")
 
         # 在 before_run 方法中
         if self.num_classes == 2:

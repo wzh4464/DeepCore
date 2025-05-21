@@ -3,7 +3,7 @@
 # Created Date: Friday, August 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:31 pm
+# Last Modified: Wednesday, 21st May 2025 8:17:45 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -349,7 +349,7 @@ class OTI(EarlyTrain):
 
         if self.num_gpus <= 1:
             self.logger.info("[OTI] Using single GPU for score calculation")
-            device_id = 0 if self.args.gpu is None else self.args.gpu[0]
+            device_id = 0 if self.args.gpu is None else self.args.gpu
             return self._single_gpu_calculate_scores(
                 self.best_params,
                 init_params,
@@ -478,6 +478,11 @@ class OTI(EarlyTrain):
         self.logger.info("[OTI] Starting score calculation on single GPU")
         return_dict = self._init_multiprocessing()
 
+        # 如果指定了GPU参数，确保device_id是正确的
+        # 在设置了CUDA_VISIBLE_DEVICES后，device_id应该已经是正确的
+        if self.args.gpu is not None:
+            self.logger.info(f"[OTI] 使用GPU设备ID: {device_id}，这是CUDA_VISIBLE_DEVICES环境变量中映射后的ID")
+            
         # Load the model with initial parameters
         self.model.load_state_dict(init_params)
         self.logger.info("[OTI] Loaded initial parameters")

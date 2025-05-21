@@ -3,7 +3,7 @@
 # Created Date: Monday, October 21st 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:15 pm
+# Last Modified: Wednesday, 21st May 2025 8:16:01 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -29,7 +29,6 @@ from time import sleep
 from typing import Type
 import logging
 import pandas as pd
-
 
 def parse_args():
     """
@@ -118,7 +117,7 @@ def parse_args():
     )
     parser.add_argument("--data_path", type=str, default="data", help="dataset path")
     parser.add_argument(
-        "--gpu", default=None, nargs="+", type=int, help="GPU id to use"
+        "--gpu", default=None, type=int, help="GPU id to use"
     )
     parser.add_argument(
         "--print_freq", "-p", default=20, type=int, help="print frequency (default: 20)"
@@ -433,7 +432,12 @@ def parse_args():
     )
 
     args = parser.parse_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # 修改设备赋值逻辑
+    if torch.cuda.is_available():
+        args.device = f"cuda:{args.gpu}" if args.gpu is not None else "cuda:0"
+    else:
+        args.device = "cpu"
 
     # add args.timestamp
     args.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -793,10 +797,11 @@ def initialize_network(args, model, train_loader, checkpoint, start_epoch):
     if args.device == "cpu":
         logging.warning("Using CPU.")
     elif args.gpu is not None:
-        torch.cuda.set_device(args.gpu[0])
-        network = nets.nets_utils.MyDataParallel(network, device_ids=args.gpu)
+        # 单GPU模式，已经在上面设置了device
+        logging.info(f"使用GPU {args.gpu} 进行训练")
     elif torch.cuda.device_count() > 1:
         network = nets.nets_utils.MyDataParallel(network).cuda()
+        logging.info(f"使用所有可用的{torch.cuda.device_count()}个GPU进行并行训练")
 
     if "state_dict" in checkpoint.keys():
         network.load_state_dict(checkpoint["state_dict"])
@@ -1236,6 +1241,13 @@ def main():
     """
 
     args = parse_args()
+    # 如果指定了GPU参数，设置CUDA_VISIBLE_DEVICES
+    if args.gpu is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+        # 重置为0，因为设置了CUDA_VISIBLE_DEVICES后，
+        # 指定的GPU会变成索引0
+        args.gpu = 0
+    
     # 使用命令行参数设置日志级别
     logger = setup_logging(log_level=args.log_level)
     logger.info(f"Parsed arguments: {args}")

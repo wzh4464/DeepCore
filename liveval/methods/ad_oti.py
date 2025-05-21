@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Monday, 27th January 2025 4:50:50 pm
+# Last Modified: Wednesday, 21st May 2025 8:37:17 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -167,7 +167,7 @@ class AD_OTI(OTI):
         theta_prev_tensor, self.param_shapes, self.param_sizes = self._dict_to_tensor(
             self.model.state_dict()
         )
-        Q_theta.append((0, theta_prev_tensor))
+        Q_theta.append((0, theta_prev_tensor.to(self.args.device)))
         self.logger.info("Initial model parameters saved to queue.")
 
         for t in range(1, T + 1):
@@ -181,7 +181,7 @@ class AD_OTI(OTI):
 
             # Save current parameters
             theta_t_tensor, _, _ = self._dict_to_tensor(self.model.state_dict())
-            Q_theta.append((t, theta_t_tensor))  # Q_theta[t]
+            Q_theta.append((t, theta_t_tensor.to(self.args.device)))  # Q_theta[t]
             self.logger.debug(f"Model parameters saved to queue at step {t}.")
 
             # Memory optimization: Remove parameters outside the max window from Q_theta
@@ -336,7 +336,7 @@ class AD_OTI(OTI):
         }
 
         save_path = os.path.join(self.args.save_path, "selection_result.pt")
-        torch.save(result, save_path)
+        torch.save(result, save_path, weights_only=False)
         self.logger.info(f"Saved selection results to {save_path}")
         self.logger.info("Selection process completed.")
         return result
@@ -522,7 +522,7 @@ class AD_OTI(OTI):
             param_shapes.append(param.shape)
             size = param.numel()
             param_sizes.append(size)
-            tensors.append(param.view(-1))
+            tensors.append(param.view(-1).to(self.args.device))
 
         # 将所有参数展平后连接成一个张量
         param_tensor = torch.cat(tensors)
@@ -739,7 +739,16 @@ class AD_OTI(OTI):
         # Assuming initial_params.pt is saved by before_run or a similar setup phase
         try:
             init_params_path = os.path.join(self.args.save_path, "initial_params.pt")
-            init_params = torch.load(init_params_path, map_location=self.args.device)
+            # 修改 map_location 参数，确保加载到可用的设备上
+            init_params = torch.load(
+                init_params_path, 
+                map_location=lambda storage, loc: storage.cuda(0) if torch.cuda.is_available() else storage, 
+                weights_only=False
+            )
+            # init_params = init_params.to(self.args.device)
+            for key, value in init_params.items():
+                init_params[key] = value.to(self.args.device)
+                del value
             self.model.load_state_dict(init_params)
             self.logger.info(f"Loaded initial model parameters from {init_params_path}")
         except FileNotFoundError:
@@ -747,9 +756,6 @@ class AD_OTI(OTI):
                 f"Initial parameters file not found at {init_params_path}. "
                 f"Ensure it's saved before calling _calculate_scores."
             )
-            # Fallback: use current model state as 'initial' if file not found, though this might not be intended.
-            init_params = self.model.state_dict()
-            self.logger.warning("Using current model state as initial parameters.")
 
         # Initialize scores and other necessary structures
         v_cumulative = torch.zeros(self.n_train, device=self.args.device)
@@ -947,7 +953,7 @@ class AD_OTI(OTI):
         )
 
         # save to result.txt
-        with open(os.path.join(args.save_path, "result.txt"), "a") as f:
+        with open(os.path.join(args.save_path, "result.txt"), "w") as f:
             ratio = float(num_flipped_in_lowest_scores) / float(args.num_flip)
             f.write(f"{ratio}")
 
