@@ -3,7 +3,7 @@
 # Created Date: Wednesday, May 21st 2025
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 21st May 2025 10:29:10 pm
+# Last Modified: Thursday, 22nd May 2025 9:36:29 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -24,28 +24,15 @@ BASE_SAVE_PATH = "./results/experiment_heatmap"
 
 # Define the parameter configurations for each experiment type
 # Experiment 1: Varying delta_min and delta_max
-delta_configs = [
-    # (delta_min, delta_max)
-    (1, 3),
-    (2, 3),
-    (3, 3),
-    (2, 2),
-    (1, 4),
-    (1, 5)
-]
+delta_configs = list(itertools.product([1, 2, 3], [3, 4, 5, 6]))
 
 # Experiment 2: Varying eps_min and eps_max
-eps_configs = [
-    # (eps_min, eps_max)
-    (0.05, 0.05),
-    (0.1, 0.05),
-    (0.15, 0.05),
-    (0.2, 0.05),
-    (0.1, 0.02),
-    (0.1, 0.07),
-    (0.1, 0.1)
-]
-
+# [0.0001, 0.00032, 0.001, 0.0032, 0.01] x [0.01, 0.032, 0.1, 0.32, 1]
+eps_configs = list(
+    itertools.product(
+        [0.0001, 0.00032, 0.001, 0.0032, 0.01], [0.01, 0.032, 0.1, 0.32, 1]
+    )
+)
 # Seeds to use for each configuration
 seeds = list(range(8))  # 0 to 7
 
