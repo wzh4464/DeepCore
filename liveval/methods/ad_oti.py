@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Wednesday, 21st May 2025 8:37:17 pm
+# Last Modified: Thursday, 22nd May 2025 9:28:42 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -69,8 +69,8 @@ class AD_OTI(OTI):
         delta_min=1,  # Minimum window size
         delta_max=3,  # Maximum window size
         delta_step=1,  # Window size adjustment step
-        eps_min=0.1,  # Lower threshold for loss change
-        eps_max=0.05,  # Upper threshold for loss change
+        eps_max=0.1,  # Lower threshold for loss change
+        eps_min=0.05,  # Upper threshold for loss change
         **kwargs,
     ):
         """
@@ -84,8 +84,8 @@ class AD_OTI(OTI):
             delta_min: Minimum window size
             delta_max: Maximum window size
             delta_step: Step size for window adjustment
-            eps_min: Minimum loss change threshold
-            eps_max: Maximum loss change threshold
+            eps_max: Minimum loss change threshold
+            eps_min: Maximum loss change threshold
         """
         super().__init__(
             dst_train=dst_train,
@@ -103,12 +103,12 @@ class AD_OTI(OTI):
         self.delta_min = int(delta_min)
         self.delta_max = int(delta_max)
         self.delta_step = int(delta_step)
-        self.eps_min = eps_min
         self.eps_max = eps_max
+        self.eps_min = eps_min
 
         # log
         self.logger.info(
-            f"AD_OTI initialized with parameters: delta={self.delta}, delta_min={self.delta_min}, delta_max={self.delta_max}, delta_step={self.delta_step}, eps_min={self.eps_min}, eps_max={self.eps_max}"
+            f"AD_OTI initialized with parameters: delta={self.delta}, delta_min={self.delta_min}, delta_max={self.delta_max}, delta_step={self.delta_step}, eps_max={self.eps_max}, eps_min={self.eps_min}"
         )
 
         # Initialize storage for parameters and valuations
@@ -579,7 +579,7 @@ class AD_OTI(OTI):
                 ) as f:
                     # if 0, 2 then write arguments
                     if current_epoch == 0 and current_step == 2:
-                        arg_line = f"delta_0={self.delta},delta_min={self.delta_min},delta_max={self.delta_max},delta_step={self.delta_step},eps_min={self.eps_min},eps_max={self.eps_max}\n"
+                        arg_line = f"delta_0={self.delta},delta_min={self.delta_min},delta_max={self.delta_max},delta_step={self.delta_step},eps_max={self.eps_max},eps_min={self.eps_min}\n"
                         f.write(arg_line)
                         self.logger.debug(arg_line)
                         f.write("epoch,step,L_t,dot_L,delta\n")
@@ -587,10 +587,10 @@ class AD_OTI(OTI):
                     f.write(line)
                     self.logger.debug(line)
 
-            if abs(dot_L) > self.eps_min:
+            if abs(dot_L) > self.eps_max:
                 delta = min(delta + self.delta_step, self.delta_max)
                 self.logger.debug("Increased window size to %d at step %d.", delta, t)
-            elif abs(dot_L) < self.eps_max:
+            elif abs(dot_L) < self.eps_min:
                 delta = max(delta - self.delta_step, self.delta_min)
                 self.logger.debug("Decreased window size to %d at step %d.", delta, t)
         L_prev = L_t
