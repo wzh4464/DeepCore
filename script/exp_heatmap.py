@@ -3,7 +3,7 @@
 # Created Date: Wednesday, May 21st 2025
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 22nd May 2025 9:36:29 am
+# Last Modified: Thursday, 22nd May 2025 5:34:18 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -24,7 +24,12 @@ BASE_SAVE_PATH = "./results/experiment_heatmap"
 
 # Define the parameter configurations for each experiment type
 # Experiment 1: Varying delta_min and delta_max
-delta_configs = list(itertools.product([1, 2, 3], [3, 4, 5, 6]))
+# 定义delta_step和delta_max的组合
+# 例如delta_step取[1,2,3]，delta_max取[3,4,5,6]
+delta_steps = [1, 2, 3]
+delta_mins = [1]
+delta_maxs = [3, 4, 5, 6]
+delta_configs = list(itertools.product(delta_steps, delta_mins, delta_maxs))
 
 # Experiment 2: Varying eps_min and eps_max
 # [0.0001, 0.00032, 0.001, 0.0032, 0.01] x [0.01, 0.032, 0.1, 0.32, 1]
@@ -37,7 +42,7 @@ eps_configs = list(
 seeds = list(range(8))  # 0 to 7
 
 # Available GPUs
-gpus = [0, 1, 2, 3]
+gpus = [0, 1, 2]
 
 # Base command template
 base_cmd_template = (
@@ -58,7 +63,7 @@ base_cmd_template = (
     "--exp flip "
     "--num_flip 40 "
     "--delta_0 2 "
-    "--delta_step 1 "
+    "--delta_step {delta_step} "
     "--gpu {gpu} "
     "--save_path {save_path} "
     "--delta_min {delta_min} "
@@ -68,137 +73,156 @@ base_cmd_template = (
     "--seed {seed}"
 )
 
+
 def run_command(cmd):
     """Run a command and return its output."""
     try:
-        result = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(
+            cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         return True, result, ""
     except subprocess.CalledProcessError as e:
         error_msg = f"错误输出: {e.stderr.decode()}"
         return False, None, error_msg
 
+
 def read_result(save_path):
     """Read the ratio value from the result.txt file."""
     result_file = os.path.join(save_path, "result.txt")
     try:
-        with open(result_file, 'r') as f:
+        with open(result_file, "r") as f:
             ratio = float(f.read().strip())
         return ratio
     except (FileNotFoundError, ValueError) as e:
         print(f"读取结果文件 {result_file} 出错: {e}")
         return None
 
+
 def run_single_task(task):
     """运行单个实验任务"""
-    gpu = task['gpu']
-    config_type = task['type']
-    delta_min = task['delta_min']
-    delta_max = task['delta_max']
-    eps_min = task['eps_min']
-    eps_max = task['eps_max']
-    seed = task['seed']
-    
+    gpu = task["gpu"]
+    config_type = task["type"]
+    delta_step = task["delta_step"]
+    delta_min = task["delta_min"]
+    delta_max = task["delta_max"]
+    eps_min = task["eps_min"]
+    eps_max = task["eps_max"]
+    seed = task["seed"]
+
     # 创建保存路径
-    if config_type == 'delta':
-        save_path = f"{BASE_SAVE_PATH}/delta_exp/delta_min_{delta_min}_delta_max_{delta_max}/seed_{seed}"
+    if config_type == "delta":
+        save_path = f"{BASE_SAVE_PATH}/delta_exp/delta_step_{delta_step}_delta_min_{delta_min}_delta_max_{delta_max}/seed_{seed}"
     else:  # eps
-        save_path = f"{BASE_SAVE_PATH}/eps_exp/eps_min_{eps_min}_eps_max_{eps_max}/seed_{seed}"
-    
+        save_path = (
+            f"{BASE_SAVE_PATH}/eps_exp/eps_min_{eps_min}_eps_max_{eps_max}/seed_{seed}"
+        )
+
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    
+
     # 构建并执行命令
     cmd = base_cmd_template.format(
         gpu=gpu,
         save_path=save_path,
+        delta_step=delta_step,
         delta_min=delta_min,
         delta_max=delta_max,
         eps_min=eps_min,
         eps_max=eps_max,
-        seed=seed
+        seed=seed,
     )
-    
-    print(f"开始执行: GPU {gpu}, {'delta' if config_type == 'delta' else 'eps'} 配置, seed {seed}")
+
+    print(
+        f"开始执行: GPU {gpu}, {'delta' if config_type == 'delta' else 'eps'} 配置, seed {seed}"
+    )
     success, _, error_msg = run_command(cmd)
-    
+
     # 读取结果
     if success:
         result = read_result(save_path)
         if result is not None:
-            print(f"GPU {gpu}, {'delta_min=' + str(delta_min) + '_delta_max=' + str(delta_max) if config_type == 'delta' else 'eps_min=' + str(eps_min) + '_eps_max=' + str(eps_max)}, seed {seed}: ratio = {result}")
+            print(
+                f"GPU {gpu}, delta_step={str(delta_step)}_delta_min={str(delta_min)}_delta_max={str(delta_max)}"
+                + f", seed {seed}: ratio = {result}"
+            )
             return {
-                'config_type': config_type,
-                'delta_min': delta_min,
-                'delta_max': delta_max,
-                'eps_min': eps_min,
-                'eps_max': eps_max,
-                'seed': seed,
-                'result': result
+                "config_type": config_type,
+                "delta_min": delta_min,
+                "delta_max": delta_max,
+                "eps_min": eps_min,
+                "eps_max": eps_max,
+                "seed": seed,
+                "result": result,
             }
     else:
-        print(f"GPU {gpu}, {'delta' if config_type == 'delta' else 'eps'} 配置, seed {seed} 执行失败")
+        print(
+            f"GPU {gpu}, {'delta' if config_type == 'delta' else 'eps'} 配置, seed {seed} 执行失败"
+        )
         print(f"完整命令: {cmd}")
         print(error_msg)
-    
+
     return None
+
 
 def create_all_tasks():
     """创建所有任务列表"""
     all_tasks = []
 
     # 创建delta配置的任务
-    for delta_min, delta_max in delta_configs:
-        for seed in seeds:
-            all_tasks.append(
-                {
-                    "type": "delta",
-                    "delta_min": delta_min,
-                    "delta_max": delta_max,
-                    "eps_min": 0.1,  # 默认值
-                    "eps_max": 0.05,  # 默认值
-                    "seed": seed,
-                }
-            )
-
+    for delta_step, delta_min, delta_max in delta_configs:
+        all_tasks.extend(
+            {
+                "type": "delta",
+                "delta_step": delta_step,
+                "delta_min": delta_min,
+                "delta_max": delta_max,
+                "eps_min": 0.00032,
+                "eps_max": 0.32,  # 默认值
+                "seed": seed,
+            }
+            for seed in seeds
+        )
     # 创建eps配置的任务
-    for eps_min, eps_max in eps_configs:
-        for seed in seeds:
-            all_tasks.append({
-                'type': 'eps',
-                'delta_min': 1,   # 默认值
-                'delta_max': 3,  # 默认值
-                'eps_min': eps_min,
-                'eps_max': eps_max,
-                'seed': seed
-            })
+    # for eps_min, eps_max in eps_configs:
+    #     for seed in seeds:
+    #         all_tasks.append({
+    #             'type': 'eps',
+    #             'delta_min': 1,   # 默认值
+    #             'delta_max': 3,  # 默认值
+    #             'eps_min': eps_min,
+    #             'eps_max': eps_max,
+    #             'seed': seed
+    #         })
 
     return all_tasks
+
 
 def run_gpu_tasks(gpu_id, tasks):
     """在指定GPU上运行一组任务，最多同时运行8个"""
     results = []
-    
+
     # 为每个任务添加GPU ID
     for task in tasks:
-        task['gpu'] = gpu_id
-    
+        task["gpu"] = gpu_id
+
     # 使用线程池同时运行最多8个任务
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(run_single_task, task) for task in tasks]
-        
+
         for future in as_completed(futures):
             result = future.result()
             if result is not None:
                 results.append(result)
-    
+
     return results
 
-def run_all_experiments():
+
+def run_all_experiments(task_on_gpu):
     """运行所有实验"""
     # 创建所有任务
     all_tasks = create_all_tasks()
     print(f"总共创建了 {len(all_tasks)} 个任务")
 
-    # 将任务均匀分配到4个GPU
+    # 将任务均匀分配到GPU
     gpu_tasks = [[] for _ in range(len(gpus))]
     for i, task in enumerate(all_tasks):
         gpu_idx = i % len(gpus)
@@ -212,10 +236,16 @@ def run_all_experiments():
 
     # 在每个GPU上运行任务
     with ThreadPoolExecutor(max_workers=len(gpus)) as executor:
-        futures = [
-            executor.submit(run_gpu_tasks, gpus[i], tasks)
-            for i, tasks in enumerate(gpu_tasks)
-        ]
+        futures = []
+        for i, tasks in enumerate(gpu_tasks):
+            if task_on_gpu is None:
+                # 如果没有限制，直接提交所有任务
+                futures.append(executor.submit(run_gpu_tasks, gpus[i], tasks))
+            else:
+                # 将任务分批处理，每批最多task_on_gpu个任务
+                for j in range(0, len(tasks), task_on_gpu):
+                    batch_tasks = tasks[j : j + task_on_gpu]
+                    futures.append(executor.submit(run_gpu_tasks, gpus[i], batch_tasks))
 
         # 收集所有结果
         for future in as_completed(futures):
@@ -225,16 +255,16 @@ def run_all_experiments():
     # 整理结果
     organized_results = {}
     for result in all_results:
-        config_type = result['config_type']
-        if config_type == 'delta':
-            key = f"delta_min_{result['delta_min']}_delta_max_{result['delta_max']}"
+        config_type = result["config_type"]
+        if config_type == "delta":
+            key = f"delta_step_{result['delta_min']}_delta_max_{result['delta_max']}"
         else:  # eps
             key = f"eps_min_{result['eps_min']}_eps_max_{result['eps_max']}"
 
         if key not in organized_results:
             organized_results[key] = []
 
-        organized_results[key].append(result['result'])
+        organized_results[key].append(result["result"])
 
     return organized_results
 
@@ -244,20 +274,20 @@ def summarize_results(all_results):
     summary_file = f"{BASE_SAVE_PATH}/summary_results.txt"
     os.makedirs(os.path.dirname(summary_file), exist_ok=True)
 
-    with open(summary_file, 'w') as f:
+    with open(summary_file, "w") as f:
         # Delta实验结果
         f.write("Delta实验结果:\n")
         f.write("-------------------------\n")
         print("\nDelta实验结果:")
         print("-------------------------")
 
-        for delta_min, delta_max in delta_configs:
-            key = f"delta_min_{delta_min}_delta_max_{delta_max}"
+        for delta_step, delta_min, delta_max in delta_configs:
+            key = f"delta_step_{delta_step}_delta_max_{delta_max}"
             if key in all_results and all_results[key]:
                 values = all_results[key]
                 mean = np.mean(values)
                 std = np.std(values)
-                result_str = f"delta_min={delta_min}, delta_max={delta_max}: 平均值={mean:.4f}, 标准差={std:.4f}, 值={values}"
+                result_str = f"delta_step={delta_step}, delta_max={delta_max}: 平均值={mean:.4f}, 标准差={std:.4f}, 值={values}"
                 f.write(result_str + "\n")
                 print(result_str)
 
@@ -283,19 +313,25 @@ def summarize_results(all_results):
 def main():
     # 创建基础目录
     os.makedirs(BASE_SAVE_PATH, exist_ok=True)
-    
+
+    task_on_gpu = None
     print("开始在4个GPU上运行实验...")
     print(f"将运行 {len(delta_configs)} 个delta配置和 {len(eps_configs)} 个epsilon配置")
     print(f"每个配置将使用 {len(seeds)} 个不同的种子")
-    print(f"每个GPU将同时运行8个任务")
-    
+    print(
+        f"每个GPU将同时运行{task_on_gpu}个任务"
+        if task_on_gpu is not None
+        else "每个GPU将同时运行所有任务"
+    )
+
     # 运行所有实验
-    results = run_all_experiments()
-    
+    results = run_all_experiments(task_on_gpu)
+
     # 汇总结果
     summarize_results(results)
-    
+
     print("所有实验已完成!")
+
 
 if __name__ == "__main__":
     main()
