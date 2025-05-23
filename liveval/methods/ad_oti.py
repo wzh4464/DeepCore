@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 22nd May 2025 9:28:42 am
+# Last Modified: Thursday, 22nd May 2025 4:57:19 pm
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -22,6 +22,7 @@ from functorch import vmap, grad
 from collections import deque, defaultdict
 from typing import Dict, Optional, Tuple, override
 import pandas as pd
+import csv
 
 from .selection_methods import SELECTION_METHODS
 from .oti import OTI
@@ -551,6 +552,18 @@ class AD_OTI(OTI):
             index += size
         return param_dict
 
+    def _save_delta_record_to_csv(self, epoch, step, L_t, dot_L, delta, delta_change):
+        """
+        保存每次delta变化的记录到CSV文件。
+        """
+        file_path = os.path.join(self.args.save_path, "delta_records.csv")
+        file_exists = os.path.exists(file_path)
+        with open(file_path, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["epoch", "step", "L_t", "dot_L", "delta", "delta_change"])
+            writer.writerow([epoch, step, L_t, dot_L, delta, delta_change])
+
     def _adjust_window_size(self, t, L_prev, L_t, delta):
         """
         Calculate loss change rate and adjust window size.
@@ -564,6 +577,7 @@ class AD_OTI(OTI):
         Returns:
             tuple: Updated delta and L_prev.
         """
+        delta_change = 0
         if L_prev is not None:
             dot_L = (L_t - L_prev) / delta
             current_epoch = t // len(self.train_loader)
@@ -571,6 +585,19 @@ class AD_OTI(OTI):
             self.logger.debug(
                 f"Loss change rate: {dot_L:.4f} at step {current_step} of epoch {current_epoch}"
             )
+
+            if abs(dot_L) > self.eps_max:
+                new_delta = min(delta + self.delta_step, self.delta_max)
+                delta_change = new_delta - delta
+                delta = new_delta
+                self.logger.debug("Increased window size to %d at step %d.", delta, t)
+            elif abs(dot_L) < self.eps_min:
+                new_delta = max(delta - self.delta_step, self.delta_min)
+                delta_change = new_delta - delta
+                delta = new_delta
+                self.logger.debug("Decreased window size to %d at step %d.", delta, t)
+            # 保存delta变化记录（无论是否变化都记录，便于分析）
+            self._save_delta_record_to_csv(current_epoch, current_step, L_t, dot_L, delta, delta_change)
 
             if self.args.log_level == "DEBUG":
                 # save to "savepath/L_{timestamps}.csv"
@@ -586,13 +613,6 @@ class AD_OTI(OTI):
                     line = f"{current_epoch},{current_step},{L_t},{dot_L},{delta}\n"
                     f.write(line)
                     self.logger.debug(line)
-
-            if abs(dot_L) > self.eps_max:
-                delta = min(delta + self.delta_step, self.delta_max)
-                self.logger.debug("Increased window size to %d at step %d.", delta, t)
-            elif abs(dot_L) < self.eps_min:
-                delta = max(delta - self.delta_step, self.delta_min)
-                self.logger.debug("Decreased window size to %d at step %d.", delta, t)
         L_prev = L_t
         return delta, L_prev
 
