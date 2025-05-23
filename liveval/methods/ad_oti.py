@@ -3,7 +3,7 @@
 # Created Date: Saturday, November 9th 2024
 # Author: Zihan
 # -----
-# Last Modified: Thursday, 22nd May 2025 4:57:19 pm
+# Last Modified: Friday, 23rd May 2025 10:08:00 am
 # Modified By: the developer formerly known as Zihan at <wzh4464@gmail.com>
 # -----
 # HISTORY:
@@ -152,19 +152,18 @@ class AD_OTI(OTI):
         """
         self.logger.info("Starting optimized selection process.")
         self.before_run()
-
-        # Initialize train_loader and iterator if not exists
         self._initialize_data_loader()
 
-        # Initialize data structures
-        T = len(self.train_loader) * self.epochs  # Total number of steps
+        T = len(self.train_loader) * self.epochs
         v_cumulative = torch.zeros(self.n_train, device=self.args.device)
-        delta = self.delta  # Start with initial window size
-        Q_ref = deque()  # Queue for reference pairs (t, t')
-        Q_theta = deque()  # Queue for model parameters at each step
-        L_prev = None  # Previous loss value, initially None
+        delta = self.delta
+        Q_ref = deque()
+        Q_theta = deque()
+        L_prev = None
+        # 优化：只存批次索引
+        batch_indices_history = {}  # step: batch_indices
+        loss_history = deque(maxlen=self.delta_max + 1)
 
-        # Initialize model state
         theta_prev_tensor, self.param_shapes, self.param_sizes = self._dict_to_tensor(
             self.model.state_dict()
         )
@@ -172,48 +171,53 @@ class AD_OTI(OTI):
         self.logger.info("Initial model parameters saved to queue.")
 
         for t in range(1, T + 1):
-            # Get current batch
-            inputs, targets, batch_indices = self._get_current_batch()
+            # 异常处理，保证 iterator 不会因异常退出
+            try:
+                inputs, targets, batch_indices = self._get_current_batch()
+            except Exception as e:
+                self.logger.error(f"Error getting batch at step {t}: {e}")
+                self.train_iterator = iter(self.train_loader)
+                inputs, targets, batch_indices = next(self.train_iterator)
             inputs = inputs.to(self.args.device)
             targets = targets.to(self.args.device)
 
-            # Training step
             self._train_step(inputs, targets, t, T)
 
-            # Save current parameters
             theta_t_tensor, _, _ = self._dict_to_tensor(self.model.state_dict())
-            Q_theta.append((t, theta_t_tensor.to(self.args.device)))  # Q_theta[t]
-            self.logger.debug(f"Model parameters saved to queue at step {t}.")
+            Q_theta.append((t, theta_t_tensor.to(self.args.device)))
 
-            # Memory optimization: Remove parameters outside the max window from Q_theta
             while len(Q_theta) > 0 and Q_theta[0][0] < t - self.delta_max:
                 Q_theta.popleft()
-                self.logger.debug(f"Removed old parameters from Q_theta up to step {Q_theta[0][0] if Q_theta else t - self.delta_max}")
 
-            # Compute current loss and adjust window size
             self.model.eval()
             with torch.no_grad():
                 outputs = self.model(inputs)
                 L_t = self.criterion(outputs, targets).item()
             self.model.train()
-            self.logger.debug(f"Loss computed at step {t}: {L_t}")
 
-            # Adjust window size based on loss change rate
-            delta, L_prev = self._adjust_window_size(t, L_prev, L_t, delta)
+            loss_history.append(L_t)
+            if len(loss_history) >= delta:
+                L_delta_ago = loss_history[-delta]
+                dot_L = (L_t - L_delta_ago) / delta
+            else:
+                dot_L = 0.0
+            delta, L_prev = self._adjust_window_size(t, L_prev, L_t, delta, dot_L)
 
-            # Update reference pairs
             t_prime = min(t + delta - 1, T)
             Q_ref.append((t, t_prime))
-            self.logger.debug(
-                "Added reference pair (t=%d, t'=%d) to reference queue.", t, t_prime
-            )
 
-            # Process completed reference pairs
+            # 只存批次索引到CPU，节省内存
+            if isinstance(batch_indices, torch.Tensor):
+                batch_indices_history[t] = batch_indices.clone().cpu()
+            else:
+                batch_indices_history[t] = torch.tensor(batch_indices).clone().cpu()
+            while batch_indices_history and min(batch_indices_history.keys()) < t - self.delta_max:
+                del batch_indices_history[min(batch_indices_history.keys())]
+
             self._process_reference_pairs(
-                v_cumulative, Q_ref, Q_theta, t, batch_indices
+                v_cumulative, Q_ref, Q_theta, t, batch_indices_history
             )
 
-            # Track flipped samples (if applicable)
             if self.flipped_indices and t % self.args.print_freq == 0:
                 num_detected = self.count_flipped_in_lowest_scores(
                     self.logger, self.args, self.flipped_indices, v_cumulative
@@ -225,7 +229,6 @@ class AD_OTI(OTI):
                     f"[AD_OTI] Step {t}: Detected {num_detected}/{len(self.flipped_indices)} flipped samples."
                 )
 
-        # Save detection statistics if flipped samples are present
         if self.flipped_indices:
             detection_df = pd.DataFrame(self.detected_flipped_per_epoch)
             detection_path = os.path.join(
@@ -238,46 +241,71 @@ class AD_OTI(OTI):
 
         return self._select_top_samples(v_cumulative)
 
-    def _process_reference_pairs(self, v_cumulative, Q_ref, Q_theta, t, batch_indices):
+    def _process_reference_pairs(self, v_cumulative, Q_ref, Q_theta, t, batch_indices_history):
         """
-        Processes reference pairs and updates cumulative valuations.
-        This method processes reference pairs from the queue `Q_ref` where the second element of the pair matches the current time step `t`.
-        It retrieves the corresponding model parameters from `Q_theta`, ensures they are on the correct device, and updates the cumulative valuations.
-        Args:
-            v_cumulative (torch.Tensor): The cumulative valuations tensor to be updated.
-            Q_ref (collections.deque): A deque of reference pairs (t1, t2) to be processed.
-            Q_theta (collections.deque): A deque of tuples (step, theta) containing model parameters.
-            t (int): The current time step.
-            batch_indices (torch.Tensor): Indices of the current batch.
-        Returns:
-            None
+        处理参考对并更新累计估值，只使用批次索引历史。
         """
-
         while Q_ref and Q_ref[0][1] == t:
             t_1, t_2 = Q_ref.popleft()
             self.logger.debug("Processing reference pair (t1=%d, t2=%d).", t_1, t_2)
-            # Retrieve corresponding model parameters
             theta_t2 = next((theta for step, theta in Q_theta if step == t_2), None)
             theta_t1_prev = next(
                 (theta for step, theta in Q_theta if step == t_1 - 1), None
             )
-
-            if theta_t2 is not None and theta_t1_prev is not None:
-                # Ensure parameters are on the correct device
+            # 使用批次索引历史
+            if (
+                t_1 in batch_indices_history
+                and theta_t2 is not None
+                and theta_t1_prev is not None
+            ):
+                batch_indices_t1 = batch_indices_history[t_1]
                 theta_t2 = theta_t2.to(self.args.device)
                 theta_t1_prev = theta_t1_prev.to(self.args.device)
-
-                self._update_cumulative_valuations(
-                    v_cumulative, batch_indices, theta_t2, theta_t1_prev
+                # 传递时刻 t_1 用于重新获取数据
+                self._update_cumulative_valuations_with_step(
+                    v_cumulative, batch_indices_t1, theta_t2, theta_t1_prev, t_1
                 )
-
-            # Clean up old model parameters from the queue
             Q_theta = deque(
                 [(step, theta) for step, theta in Q_theta if step >= t_1 - 1]
             )
             self.logger.info(
                 "Cleaned up model parameters from queue up to step %d.", t_1 - 1
             )
+
+    def _update_cumulative_valuations_with_step(
+        self, v_cumulative, batch_indices, theta_t2, theta_t1_prev, step_t1
+    ):
+        """
+        更新累计估值，通过批次索引重新获取数据。
+        """
+        # 将批次索引移到正确的设备
+        if isinstance(batch_indices, torch.Tensor):
+            batch_indices = batch_indices.cpu().tolist()
+        data_batch = []
+        target_batch = []
+        true_indices = []
+        for idx in batch_indices:
+            data, target, true_idx = self.dst_train[idx]
+            data_batch.append(data)
+            target_batch.append(target)
+            true_indices.append(true_idx)
+        data_batch = torch.stack(data_batch).to(self.args.device)
+        target_batch = torch.tensor(target_batch).to(self.args.device)
+        true_indices = torch.tensor(true_indices)
+        gradients_tensor = self._batch_compute_gradients(
+            theta_t1_prev, data_batch, target_batch
+        )
+        eta_t1 = self.get_lr()
+        batch_pseudo_params_tensor = (
+            theta_t1_prev.unsqueeze(0) - eta_t1 * gradients_tensor
+        )
+        v_i_t1 = self._batch_compute_valuations(
+            theta_t2, theta_t1_prev, batch_pseudo_params_tensor
+        )
+        for i, true_idx in enumerate(true_indices):
+            if self.scores_indices and true_idx.item() not in self.scores_indices:
+                continue
+            v_cumulative[true_idx] += v_i_t1[i]
 
     def _select_top_samples(self, v_cumulative):
         """
@@ -492,16 +520,12 @@ class AD_OTI(OTI):
         # or if delta_theta_norm is zero (implies Δθ_t is zero vector).
         denominator = delta_theta_norm + u_norm
         scores = torch.where(
-            denominator > 1e-9, # Avoid division by zero or near-zero
+            denominator > 1e-9,  # Avoid division by zero or near-zero
             (delta_theta_norm - u_norm) / denominator,
             torch.zeros_like(u_norm),
         )
         # If delta_theta_norm is also very small (e.g. reference and prev params are same), score should be 0
-        scores = torch.where(
-            delta_theta_norm > 1e-9,
-            scores,
-            torch.zeros_like(u_norm)
-        )
+        scores = torch.where(delta_theta_norm > 1e-9, scores, torch.zeros_like(u_norm))
 
         return scores
 
@@ -561,10 +585,12 @@ class AD_OTI(OTI):
         with open(file_path, mode="a", newline="") as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(["epoch", "step", "L_t", "dot_L", "delta", "delta_change"])
+                writer.writerow(
+                    ["epoch", "step", "L_t", "dot_L", "delta", "delta_change"]
+                )
             writer.writerow([epoch, step, L_t, dot_L, delta, delta_change])
 
-    def _adjust_window_size(self, t, L_prev, L_t, delta):
+    def _adjust_window_size(self, t, L_prev, L_t, delta, dot_L):
         """
         Calculate loss change rate and adjust window size.
 
@@ -573,13 +599,12 @@ class AD_OTI(OTI):
             L_prev (float): Previous loss.
             L_t (float): Current loss.
             delta (int): Current window size.
-
+            dot_L (float): Loss change rate.
         Returns:
             tuple: Updated delta and L_prev.
         """
         delta_change = 0
         if L_prev is not None:
-            dot_L = (L_t - L_prev) / delta
             current_epoch = t // len(self.train_loader)
             current_step = t % len(self.train_loader)
             self.logger.debug(
@@ -597,7 +622,9 @@ class AD_OTI(OTI):
                 delta = new_delta
                 self.logger.debug("Decreased window size to %d at step %d.", delta, t)
             # 保存delta变化记录（无论是否变化都记录，便于分析）
-            self._save_delta_record_to_csv(current_epoch, current_step, L_t, dot_L, delta, delta_change)
+            self._save_delta_record_to_csv(
+                current_epoch, current_step, L_t, dot_L, delta, delta_change
+            )
 
             if self.args.log_level == "DEBUG":
                 # save to "savepath/L_{timestamps}.csv"
@@ -709,29 +736,25 @@ class AD_OTI(OTI):
     def _get_train_loader(self):
         """Create and return training data loader with IndexedDataset support."""
         self.logger.info("Creating training data loader.")
-
-        # Ensure dataset is wrapped in IndexedDataset
         if not isinstance(self.dst_train, IndexedDataset):
             indices = np.arange(len(self.dst_train))
             self.dst_train = IndexedDataset(self.dst_train, indices)
             self.logger.info("Wrapped dataset in IndexedDataset")
-
-        # Create DataLoader with custom collate function
+        # 优化 DataLoader 配置
         train_loader = torch.utils.data.DataLoader(
             self.dst_train,
             batch_size=self.args.selection_batch,
             shuffle=False,
-            num_workers=self.args.workers,
-            pin_memory=True,
+            num_workers=min(self.args.workers, 4),  # 限制工作进程数
+            pin_memory=False,  # 禁用 pin_memory
             collate_fn=custom_collate,
+            persistent_workers=False,  # 不保持工作进程
         )
-
         self.logger.info(
             "Training data loader created with batch size %d and %d workers.",
             self.args.selection_batch,
-            self.args.workers,
+            min(self.args.workers, 4),
         )
-
         return train_loader, self.dst_train.indices
 
     def _save_epoch_scores_to_csv(self, filename, scores_dataframe, message_prefix):
@@ -745,27 +768,20 @@ class AD_OTI(OTI):
         self, use_regularization=False, use_learning_rate=True, use_sliding_window=False
     ):
         """
-        Implement score calculation using the adaptive window mechanism from LiveVal.
-        This method simulates the training process, calculating valuations dynamically
-        based on adaptive reference points, similar to the `select` method.
+        实现自适应窗口机制的分数计算，修正批次历史和损失历史。
         """
         self.logger.info("[AD_OTI] Starting score calculation with adaptive window.")
-        self.before_run() # Sets up model, optimizer, criterion, etc.
-
-        # Initialize data loader if not already done
+        self.before_run()
         self._initialize_data_loader()
-
-        # Load initial model parameters (e.g., from before any training)
-        # Assuming initial_params.pt is saved by before_run or a similar setup phase
         try:
             init_params_path = os.path.join(self.args.save_path, "initial_params.pt")
-            # 修改 map_location 参数，确保加载到可用的设备上
             init_params = torch.load(
-                init_params_path, 
-                map_location=lambda storage, loc: storage.cuda(0) if torch.cuda.is_available() else storage, 
-                weights_only=False
+                init_params_path,
+                map_location=lambda storage, loc: (
+                    storage.cuda(0) if torch.cuda.is_available() else storage
+                ),
+                weights_only=False,
             )
-            # init_params = init_params.to(self.args.device)
             for key, value in init_params.items():
                 init_params[key] = value.to(self.args.device)
                 del value
@@ -776,41 +792,42 @@ class AD_OTI(OTI):
                 f"Initial parameters file not found at {init_params_path}. "
                 f"Ensure it's saved before calling _calculate_scores."
             )
-
-        # Initialize scores and other necessary structures
         v_cumulative = torch.zeros(self.n_train, device=self.args.device)
-        T = len(self.train_loader) * self.epochs  # Total number of steps
-        delta = self.delta  # Start with initial window size from AD_OTI params
-        Q_ref = deque()  # Queue for reference pairs (t_eval, t_ref)
-        Q_theta = deque() # Queue for model parameters (step, theta_tensor)
-        L_prev = None  # Previous loss value
-
-        # Store initial model state (theta_0)
-        theta_0_tensor, self.param_shapes, self.param_sizes = self._dict_to_tensor(init_params)
+        T = len(self.train_loader) * self.epochs
+        delta = self.delta
+        Q_ref = deque()
+        Q_theta = deque()
+        L_prev = None
+        # 优化：只存批次索引
+        batch_indices_history = {}
+        loss_history = deque(maxlen=self.delta_max + 1)
+        theta_0_tensor, self.param_shapes, self.param_sizes = self._dict_to_tensor(
+            init_params
+        )
         Q_theta.append((0, theta_0_tensor.to(self.args.device)))
-        self.logger.info("Initial model parameters (t=0) saved to Q_theta for score calculation.")
-
-        # Simulate training epochs and steps for score calculation
+        self.logger.info(
+            "Initial model parameters (t=0) saved to Q_theta for score calculation."
+        )
         current_step_global = 0
         for epoch in range(self.epochs):
             self.logger.info(f"[AD_OTI Score Calc] Epoch {epoch + 1}/{self.epochs}")
-            self._setup_optimizer_scheduler(use_learning_rate) # Reset optimizer for each epoch simulation if needed
-
-            # Re-initialize train_iterator for each epoch if it's consumed per epoch
-            # This ensures we iterate over the full dataset for each simulated epoch.
-            self.train_iterator = iter(self.train_loader) 
-
-            for batch_idx, (inputs, targets, batch_indices) in enumerate(self.train_iterator):
+            self._setup_optimizer_scheduler(use_learning_rate)
+            self.train_iterator = iter(self.train_loader)
+            for batch_idx, (inputs, targets, batch_indices) in enumerate(
+                self.train_iterator
+            ):
                 if current_step_global >= T:
-                    break # Stop if total steps T are reached
-
+                    break
                 current_step_global += 1
                 t = current_step_global
-
+                try:
+                    pass  # 这里 DataLoader 已经返回 batch，无需异常处理
+                except Exception as e:
+                    self.logger.error(f"Error getting batch at step {t}: {e}")
+                    self.train_iterator = iter(self.train_loader)
+                    inputs, targets, batch_indices = next(self.train_iterator)
                 inputs = inputs.to(self.args.device)
                 targets = targets.to(self.args.device)
-
-                # Perform a training step (simulated)
                 self.model.train()
                 self.model_optimizer.zero_grad()
                 outputs = self.model(inputs)
@@ -819,117 +836,42 @@ class AD_OTI(OTI):
                 self.model_optimizer.step()
                 if self.scheduler:
                     self.scheduler.step()
-
-                # Save current parameters (theta_t)
                 theta_t_tensor, _, _ = self._dict_to_tensor(self.model.state_dict())
                 Q_theta.append((t, theta_t_tensor.to(self.args.device)))
-
-                # Memory optimization for Q_theta
                 while len(Q_theta) > 0 and Q_theta[0][0] < t - self.delta_max:
                     Q_theta.popleft()
-
-                # Compute current loss L_t for window adjustment
                 self.model.eval()
                 with torch.no_grad():
-                    outputs_eval = self.model(inputs) # Re-evaluate on current batch with updated theta_t
+                    outputs_eval = self.model(inputs)
                     L_t = self.criterion(outputs_eval, targets).item()
                 self.model.train()
-
-                # Adjust window size delta based on loss change rate
-                delta, L_prev = self._adjust_window_size(t, L_prev, L_t, delta)
-
-                # Update reference pairs Q_ref
-                t_prime = min(t + delta - 1, T) # t_ref in paper is t - 1 + delta_t
-                # Here, t_eval is t, so t_ref is t + delta -1
+                loss_history.append(L_t)
+                if len(loss_history) >= delta:
+                    L_delta_ago = loss_history[-delta]
+                    dot_L = (L_t - L_delta_ago) / delta
+                else:
+                    dot_L = 0.0
+                delta, L_prev = self._adjust_window_size(t, L_prev, L_t, delta, dot_L)
+                t_prime = min(t + delta - 1, T)
                 Q_ref.append((t, t_prime))
-
-                # Process completed reference pairs from Q_ref
-                # (Valuations are computed for batch_indices active at t_1)
-                # Need to track which batch_indices correspond to t_1 when processing
-                # For simplicity here, we assume batch_indices of current step t are relevant if t becomes t_1
-                # This part needs careful alignment with how _process_reference_pairs in `select` handles batch_indices
-
-                # Store batch_indices with their step t for later valuation
-                # We need a way to link (t_1, t_2) from Q_ref to the batch_indices active at t_1
-                # Let's use a temporary store for batch_indices per step that Q_ref might point to.
-                # This is a simplification. A more robust way would be to store (t1, t2, batch_indices_at_t1) in Q_ref
-                # or have a separate queue for (step, batch_indices).
-                # For now, we'll use the batch_indices of the *current* step `t` if `t` matches a `t_1` from a popped Q_ref item.
-                # This is because the valuation v_i^t occurs for data i in batch B_t.
-                # So, when (t1, t2) is processed, t1 is the step when the batch was processed.
-
-                # Simplified: Process reference pairs using current batch_indices if t matches a t_1
-                # This is slightly different from select method's handling of batch_indices in _process_reference_pairs
-                # which uses batch_indices passed into it. Here we simulate step-by-step.
-
-                while Q_ref and Q_ref[0][1] == t: # If current t is a t_ref for some past t_eval
-                    t_1_eval, t_2_ref = Q_ref.popleft()
-                    self.logger.debug(f"[Score Calc] Processing ref pair (t_eval={t_1_eval}, t_ref={t_2_ref}).")
-
-                    theta_t2_ref = next((theta for step, theta in Q_theta if step == t_2_ref), None)
-                    theta_t1_eval_prev = next((theta for step, theta in Q_theta if step == t_1_eval - 1), None)
-
-                    # Retrieve batch_indices for t_1_eval. This is tricky in this loop structure.
-                    # The original paper implies v_i^t is for sample i in batch B_t.
-                    # So when (t_eval, t_ref) is processed, we need batch_indices from t_eval.
-                    # For this simulation, we'll assume the batch_indices are those of the step t_1_eval.
-                    # This requires saving batch_indices along with parameters or in a separate queue.
-                    # Let's assume `_get_current_batch` was called at t_1_eval and we had its batch_indices.
-                    # This is a key difference to resolve for full alignment.
-
-                    # For now, let's assume the batch_indices for valuation are the ones for the *current* step t,
-                    # if t_1_eval == t. This is a simplification and likely incorrect for full alignment.
-                    # The `_update_cumulative_valuations` expects `batch_indices` that were active
-                    # when `theta_t1_prev` was used to compute `gradients_tensor` to form `pseudo_params`.
-
-                    # A more correct simulation would require storing (step, batch_indices) and retrieving batch_indices for t_1_eval.
-                    # Let's refine this: we need to find the data (inputs, targets, batch_indices) that were processed at step t_1_eval.
-                    # This is not directly available in the current loop structure without more storage.
-
-                    # Given the complexity, and that _calculate_scores in OTI is simpler,
-                    # a full simulation of `select`'s valuation might be too much here.
-                    # The original request was to integrate adaptive window with score calculation.
-                    # A pragmatic approach might be to use the adaptive `delta` to guide which `theta_ref`
-                    # to use, but keep the simpler OTI-like batch scoring for `_calculate_scores`.
-
-                    # Revisiting: The goal is *adaptive reference points*. So we do need theta_t2_ref and theta_t1_eval_prev.
-                    # The `_update_cumulative_valuations` method needs `batch_indices` that correspond to `theta_t1_eval_prev`.
-                    # This means we must associate `batch_indices` with `t_1_eval`.
-                    # Let's simplify by using the `inputs`, `targets`, `batch_indices` of the *current* outer loop iteration (batch_idx)
-                    # if `t_1_eval` happens to be the *current global step t*.
-                    # This is still an approximation. The original `select` method processes `batch_indices` of the current step `t`
-                    # if `t` becomes `t_1` for a reference pair.
-
-                    if theta_t2_ref is not None and theta_t1_eval_prev is not None:
-                        # We need the batch_data and batch_targets that were processed at step t_1_eval.
-                        # This simulated loop processes batches sequentially. If t_1_eval corresponds to an earlier batch
-                        # in this epoch or a previous epoch, we don't have its data readily available here.
-                        # This implies that `_calculate_scores` cannot easily replicate the *exact* online valuation of `select`
-                        # without storing all historical batches or re-iterating the dataset up to t_1_eval for each valuation.
-
-                        # Compromise: Use the current batch's data (inputs, targets, batch_indices) for valuation
-                        # if t_1_eval == t (i.e., the valuation is for the current step's data using a future reference).
-                        # This is what happens in `select` implicitly: batch_indices are from current step `t` which becomes `t_1`.
-                        if t_1_eval == t: # If the evaluation point is the current step
-                            self._update_cumulative_valuations(
-                                v_cumulative, batch_indices, # batch_indices of current step t = t_1_eval
-                                theta_t2_ref.to(self.args.device),
-                                theta_t1_eval_prev.to(self.args.device)
-                            )
-                        # Else: if t_1_eval was a past step, we've missed its batch_indices in this simplified flow.
-                        # A full version would need to store (step, batch_indices, params) or similar.
-
-                    # Clean up Q_theta based on t_1_eval (similar to select's _process_reference_pairs)
-                    Q_theta = deque(
-                        [(step_q, theta_q) for step_q, theta_q in Q_theta if step_q >= t_1_eval - 1]
+                # 只存批次索引到CPU，节省内存
+                if isinstance(batch_indices, torch.Tensor):
+                    batch_indices_history[t] = batch_indices.clone().cpu()
+                else:
+                    batch_indices_history[t] = torch.tensor(batch_indices).clone().cpu()
+                while batch_indices_history and min(batch_indices_history.keys()) < t - self.delta_max:
+                    del batch_indices_history[min(batch_indices_history.keys())]
+                self._process_reference_pairs(
+                    v_cumulative, Q_ref, Q_theta, t, batch_indices_history
+                )
+                if current_step_global >= T:
+                    self.logger.info(
+                        "[AD_OTI Score Calc] Reached total steps T. Stopping epoch simulation."
                     )
-
-            if current_step_global >= T:
-                self.logger.info("[AD_OTI Score Calc] Reached total steps T. Stopping epoch simulation.")
-                break
-
-        # Log final score stats
-        self.logger.info(f"[AD_OTI Score Calc] Final mean score: {v_cumulative.mean().item():.4f}")
+                    break
+        self.logger.info(
+            f"[AD_OTI Score Calc] Final mean score: {v_cumulative.mean().item():.4f}"
+        )
         if self.flipped_indices:
             num_detected = self.count_flipped_in_lowest_scores(
                 self.logger, self.args, self.flipped_indices, v_cumulative
@@ -937,22 +879,18 @@ class AD_OTI(OTI):
             self.logger.info(
                 f"[AD_OTI Score Calc] Detected {num_detected}/{len(self.flipped_indices)} flipped samples in lowest scores."
             )
-
-        # Set any zero scores to NaN (matching OTI behavior if desired, or keep as 0)
-        # v_cumulative[v_cumulative == 0.0] = float("nan")
-        # Decided to keep as 0 for AD_OTI unless NaN is specifically needed.
-
-        # Save scores if needed (similar to _select_top_samples)
-        df_scores = pd.DataFrame({
-            'index': np.arange(self.n_train),
-            'score': v_cumulative.cpu().numpy()
-        })
+        df_scores = pd.DataFrame(
+            {"index": np.arange(self.n_train), "score": v_cumulative.cpu().numpy()}
+        )
         if self.flipped_indices:
-            df_scores['is_flipped'] = df_scores['index'].isin(self.flipped_indices)
-        df_scores = df_scores.sort_values('score', ascending=False)
-        self._save_epoch_scores_to_csv("ad_oti_calculated_scores.csv", df_scores, "[AD_OTI Score Calc] Saved calculated scores to ")
-
-        return v_cumulative.cpu() # Ensure scores are returned on CPU
+            df_scores["is_flipped"] = df_scores["index"].isin(self.flipped_indices)
+        df_scores = df_scores.sort_values("score", ascending=False)
+        self._save_epoch_scores_to_csv(
+            "ad_oti_calculated_scores.csv",
+            df_scores,
+            "[AD_OTI Score Calc] Saved calculated scores to ",
+        )
+        return v_cumulative.cpu()
 
     @override
     def count_flipped_in_lowest_scores(self, logger, args, flipped_indices, scores):
