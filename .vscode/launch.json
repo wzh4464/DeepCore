@@ -87,16 +87,17 @@
                 "--scheduler", "CosineAnnealingLR",
                 "--save_path", "./results/test_ad_oti_archieve",
                 "--num_gpus", "1",
-                "--workers", "4",
+                "--workers", "1",
                 "--oti_mode", "full",
                 "--exp", "flip",
                 "--num_flip", "40",
-                "--delta_0", "20",
-                "--delta_min", "8",
-                "--delta_max", "50",
+                "--delta_0", "2",
+                "--delta_min", "1",
+                "--delta_max", "6",
                 "--delta_step", "2",
-                "--eps_min", "0.01",
-                "--eps_max", "0.1"
+                "--eps_min", "0.00032",
+                "--eps_max", "0.32",
+                "--log_level", "DEBUG"
             ]
         }
     ]
